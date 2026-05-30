@@ -131,7 +131,8 @@ impl TorrentSession {
 
     pub fn apply_resume(&self, rd: &ResumeData) {
         self.piece_manager.load_have(&rd.have_pieces);
-        self.total_downloaded.store(rd.downloaded, Ordering::Relaxed);
+        self.total_downloaded
+            .store(rd.downloaded, Ordering::Relaxed);
         self.total_uploaded.store(rd.uploaded, Ordering::Relaxed);
         if rd.file_priorities.len() == self.meta.files.len() {
             *self.file_priorities.lock() = rd.file_priorities.clone();
@@ -219,7 +220,9 @@ impl TorrentSession {
                                     }
                                 }
                                 session.active_peers.fetch_add(1, Ordering::Relaxed);
-                                let _guard = ActiveGuard { counter: &session.active_peers };
+                                let _guard = ActiveGuard {
+                                    counter: &session.active_peers,
+                                };
 
                                 if let Err(e) = session.handle_peer(addr, None).await {
                                     tracing::debug!("Peer {} error: {}", addr, e);
@@ -250,7 +253,9 @@ impl TorrentSession {
                         }
                     }
                     session.active_peers.fetch_add(1, Ordering::Relaxed);
-                    let _guard = ActiveGuard { counter: &session.active_peers };
+                    let _guard = ActiveGuard {
+                        counter: &session.active_peers,
+                    };
 
                     if let Err(e) = session.handle_peer(addr, incoming).await {
                         tracing::debug!("Peer {} error: {}", addr, e);
@@ -371,11 +376,7 @@ impl TorrentSession {
                         if !response.peers.is_empty() {
                             let _ = peer_tx.send(PeerEvent::AddPeers(response.peers)).await;
                         }
-                        tracing::info!(
-                            "Tracker {} OK, interval={}s",
-                            tracker_url,
-                            interval
-                        );
+                        tracing::info!("Tracker {} OK, interval={}s", tracker_url, interval);
                         break;
                     }
                     Err(e) => {
@@ -438,15 +439,17 @@ impl TorrentSession {
         conn.send_message(&PeerMessage::Interested).await?;
         conn.am_interested = true;
 
-        self.peer_choke_stats.lock().insert(addr, PeerStats {
-            downloaded: 0,
-            am_choking: true,
-            peer_interested: false,
-        });
+        self.peer_choke_stats.lock().insert(
+            addr,
+            PeerStats {
+                downloaded: 0,
+                am_choking: true,
+                peer_interested: false,
+            },
+        );
 
         let mut total_sent: u32 = 0;
-        let mut current_piece: Option<Arc<parking_lot::Mutex<crate::piece::PieceCollector>>> =
-            None;
+        let mut current_piece: Option<Arc<parking_lot::Mutex<crate::piece::PieceCollector>>> = None;
         let mut current_piece_index: Option<u32> = None;
         let mut pending_requests: u32 = 0;
         let mut blocks_in_piece: u32 = 0;
@@ -465,9 +468,7 @@ impl TorrentSession {
                 if self.config.seed_ratio_enabled {
                     let dl = self.total_downloaded.load(Ordering::Relaxed);
                     let ul = self.total_uploaded.load(Ordering::Relaxed);
-                    if dl > 0
-                        && (ul as f64 / dl as f64) >= self.config.seed_ratio_limit
-                    {
+                    if dl > 0 && (ul as f64 / dl as f64) >= self.config.seed_ratio_limit {
                         tracing::info!("Seed ratio reached, stopping");
                         break;
                     }
@@ -475,7 +476,9 @@ impl TorrentSession {
             }
 
             {
-                let should_choke = self.peer_choke_stats.lock()
+                let should_choke = self
+                    .peer_choke_stats
+                    .lock()
                     .get(&conn.addr)
                     .map(|s| s.am_choking)
                     .unwrap_or(true);
@@ -509,17 +512,14 @@ impl TorrentSession {
                     };
 
                     for piece_idx in candidates.iter().take(3) {
-                        if let Some(collector) =
-                            self.piece_manager.try_start_piece(*piece_idx)
-                        {
+                        if let Some(collector) = self.piece_manager.try_start_piece(*piece_idx) {
                             blocks_in_piece = collector.lock().num_blocks;
                             total_sent = 0;
                             current_piece = Some(collector);
                             current_piece_index = Some(*piece_idx);
                             break;
                         } else if in_endgame {
-                            let collector =
-                                self.piece_manager.force_start_piece(*piece_idx);
+                            let collector = self.piece_manager.force_start_piece(*piece_idx);
                             blocks_in_piece = collector.lock().num_blocks;
                             total_sent = 0;
                             current_piece = Some(collector);
@@ -533,8 +533,7 @@ impl TorrentSession {
                     let max_to_send = blocks_in_piece.saturating_sub(total_sent);
                     if max_to_send > 0 {
                         let missing = collector.lock().missing_blocks();
-                        let pipeline_room =
-                            max_pipeline.saturating_sub(pending_requests);
+                        let pipeline_room = max_pipeline.saturating_sub(pending_requests);
                         let send_count = (max_to_send as usize)
                             .min(pipeline_room as usize)
                             .min(missing.len());
@@ -565,16 +564,16 @@ impl TorrentSession {
                     .collect();
                 if !new_peers.is_empty() {
                     let pex_payload = PeerMessage::build_pex_payload(&new_peers, &[]);
-                    conn.send_message(&PeerMessage::Extended { id: 1, payload: pex_payload }).await?;
+                    conn.send_message(&PeerMessage::Extended {
+                        id: 1,
+                        payload: pex_payload,
+                    })
+                    .await?;
                 }
                 last_pex_send = Instant::now();
             }
 
-            let msg = match tokio::time::timeout(
-                Duration::from_secs(10),
-                conn.recv_message(),
-            )
-            .await
+            let msg = match tokio::time::timeout(Duration::from_secs(10), conn.recv_message()).await
             {
                 Ok(Ok(msg)) => msg,
                 Ok(Err(e)) => {
@@ -597,13 +596,15 @@ impl TorrentSession {
                 }
                 PeerMessage::Interested => {
                     conn.peer_interested = true;
-                    self.peer_choke_stats.lock()
+                    self.peer_choke_stats
+                        .lock()
                         .get_mut(&conn.addr)
                         .map(|s| s.peer_interested = true);
                 }
                 PeerMessage::NotInterested => {
                     conn.peer_interested = false;
-                    self.peer_choke_stats.lock()
+                    self.peer_choke_stats
+                        .lock()
                         .get_mut(&conn.addr)
                         .map(|s| s.peer_interested = false);
                 }
@@ -624,8 +625,7 @@ impl TorrentSession {
                     for i in 0..self.piece_manager.num_pieces {
                         let byte_idx = (i / 8) as usize;
                         let bit_offset = 7 - (i % 8);
-                        let has_bit = byte_idx < bf.len()
-                            && (bf[byte_idx] >> bit_offset) & 1 == 1;
+                        let has_bit = byte_idx < bf.len() && (bf[byte_idx] >> bit_offset) & 1 == 1;
                         if has_bit && !conn.has_piece(i) {
                             self.piece_manager.mark_have_piece(i);
                         }
@@ -633,8 +633,7 @@ impl TorrentSession {
                     conn.bitfield = bf.clone();
                 }
                 PeerMessage::Extended { id: 1, payload } => {
-                    let (added, _dropped) =
-                        PeerMessage::parse_pex_payload(&payload);
+                    let (added, _dropped) = PeerMessage::parse_pex_payload(&payload);
                     for peer in added {
                         if peer != conn.addr && !known_peers.contains(&peer) {
                             known_peers.push(peer);
@@ -645,7 +644,8 @@ impl TorrentSession {
                     pending_requests = pending_requests.saturating_sub(1);
                     let data_len = data.len() as u64;
                     self.total_downloaded.fetch_add(data_len, Ordering::Relaxed);
-                    self.peer_choke_stats.lock()
+                    self.peer_choke_stats
+                        .lock()
                         .get_mut(&conn.addr)
                         .map(|s| s.downloaded = s.downloaded.saturating_add(data_len));
 
@@ -670,8 +670,7 @@ impl TorrentSession {
                                         sha1::Digest::update(&mut hasher, &piece_data);
                                         let result = hasher.finalize();
                                         if result.as_slice() == expected_hash {
-                                            if let Err(e) = storage.write_piece(idx, &piece_data)
-                                            {
+                                            if let Err(e) = storage.write_piece(idx, &piece_data) {
                                                 tracing::warn!("Write piece {}: {}", idx, e);
                                                 pm.abort_piece(idx);
                                                 return;
@@ -683,7 +682,8 @@ impl TorrentSession {
                                                 pm.progress() * 100.0
                                             );
                                         } else {
-                                            let already_done = pm.get_have_vec()
+                                            let already_done = pm
+                                                .get_have_vec()
                                                 .get(idx as usize)
                                                 .copied()
                                                 .unwrap_or(false);
@@ -695,8 +695,14 @@ impl TorrentSession {
                                                 pm.abort_piece(idx);
                                             }
                                         }
-                                    }).await {
-                                        tracing::error!("Piece verification panicked for {}: {}", idx, e);
+                                    })
+                                    .await
+                                    {
+                                        tracing::error!(
+                                            "Piece verification panicked for {}: {}",
+                                            idx,
+                                            e
+                                        );
                                     }
                                 });
                             }
@@ -719,32 +725,21 @@ impl TorrentSession {
                         {
                             continue;
                         }
-                        let have =
-                            self.piece_manager.get_have_vec();
-                        if have
-                            .get(index as usize)
-                            .copied()
-                            .unwrap_or(false)
-                        {
-                            let piece_size =
-                                self.piece_manager.piece_size(index);
+                        let have = self.piece_manager.get_have_vec();
+                        if have.get(index as usize).copied().unwrap_or(false) {
+                            let piece_size = self.piece_manager.piece_size(index);
                             if begin as u64 + length as u64 > piece_size {
                                 continue;
                             }
-                            if let Ok(piece_data) =
-                                self.storage.read_piece(index, piece_size)
-                            {
-                                let block =
-                                    piece_data[begin as usize..begin as usize + length as usize].to_vec();
+                            if let Ok(piece_data) = self.storage.read_piece(index, piece_size) {
+                                let block = piece_data
+                                    [begin as usize..begin as usize + length as usize]
+                                    .to_vec();
 
-                                self.ul_limiter
-                                    .wait_consume(block.len() as u64)
-                                    .await;
+                                self.ul_limiter.wait_consume(block.len() as u64).await;
 
-                                self.total_uploaded.fetch_add(
-                                    block.len() as u64,
-                                    Ordering::Relaxed,
-                                );
+                                self.total_uploaded
+                                    .fetch_add(block.len() as u64, Ordering::Relaxed);
                                 conn.send_message(&PeerMessage::Piece {
                                     index,
                                     begin,
@@ -782,10 +777,10 @@ impl TorrentSession {
 
             let (current, interested_set) = {
                 let stats = self.peer_choke_stats.lock();
-                let current: HashMap<SocketAddrV4, u64> = stats.iter()
-                    .map(|(a, s)| (*a, s.downloaded))
-                    .collect();
-                let interested: Vec<SocketAddrV4> = stats.iter()
+                let current: HashMap<SocketAddrV4, u64> =
+                    stats.iter().map(|(a, s)| (*a, s.downloaded)).collect();
+                let interested: Vec<SocketAddrV4> = stats
+                    .iter()
                     .filter(|(_, s)| s.peer_interested)
                     .map(|(a, _)| *a)
                     .collect();
@@ -794,7 +789,8 @@ impl TorrentSession {
 
             let now = Instant::now();
 
-            let mut speeds: Vec<(SocketAddrV4, u64)> = current.iter()
+            let mut speeds: Vec<(SocketAddrV4, u64)> = current
+                .iter()
                 .map(|(a, &dl)| {
                     let prev = prev_downloaded.get(a).copied().unwrap_or(0);
                     (*a, dl.saturating_sub(prev))
@@ -811,13 +807,16 @@ impl TorrentSession {
                 to_unchoke.push(*addr);
             }
 
-            if last_opt_unchoke.elapsed() >= Duration::from_secs(self.config.optimistic_unchoke_interval) {
-                let candidates: Vec<SocketAddrV4> = interested_set.iter()
+            if last_opt_unchoke.elapsed()
+                >= Duration::from_secs(self.config.optimistic_unchoke_interval)
+            {
+                let candidates: Vec<SocketAddrV4> = interested_set
+                    .iter()
                     .filter(|a| !to_unchoke.contains(a))
                     .copied()
                     .collect();
                 if !candidates.is_empty() {
-                    let idx = rand::random::<usize>() % candidates.len();
+                    let idx = rand::random_range(0..candidates.len());
                     to_unchoke.push(candidates[idx]);
                 }
                 last_opt_unchoke = now;
@@ -858,8 +857,7 @@ impl TorrentSession {
             last_uploaded = uploaded;
 
             let progress = self.piece_manager.progress();
-            let remaining =
-                (self.meta.total_size as f64 * (1.0f64 - progress as f64)) as u64;
+            let remaining = (self.meta.total_size as f64 * (1.0f64 - progress as f64)) as u64;
             let eta = if dl_rate > 0 {
                 Some(remaining / dl_rate)
             } else {
@@ -880,8 +878,7 @@ impl TorrentSession {
                 s.upload_rate = ul_rate;
                 s.downloaded = downloaded;
                 s.uploaded = uploaded;
-                s.connected_peers =
-                    self.active_peers.load(Ordering::Relaxed) as usize;
+                s.connected_peers = self.active_peers.load(Ordering::Relaxed) as usize;
                 s.progress = progress;
                 s.state = state;
                 s.eta_seconds = eta;

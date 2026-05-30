@@ -16,8 +16,7 @@ pub struct PieceCollector {
 
 impl PieceCollector {
     pub fn new(index: u32, piece_size: u64, expected_hash: [u8; 20]) -> Self {
-        let num_blocks =
-            ((piece_size + BLOCK_SIZE as u64 - 1) / BLOCK_SIZE as u64) as u32;
+        let num_blocks = ((piece_size + BLOCK_SIZE as u64 - 1) / BLOCK_SIZE as u64) as u32;
         Self {
             index,
             piece_size,
@@ -58,10 +57,8 @@ impl PieceCollector {
         let mut offset = 0u32;
         while (offset as u64) < self.piece_size {
             if !self.blocks.contains_key(&offset) {
-                let length = std::cmp::min(
-                    BLOCK_SIZE as u64,
-                    self.piece_size - offset as u64,
-                ) as u32;
+                let length =
+                    std::cmp::min(BLOCK_SIZE as u64, self.piece_size - offset as u64) as u32;
                 missing.push((offset, length));
             }
             offset += BLOCK_SIZE;
@@ -83,12 +80,7 @@ pub struct PieceManager {
 }
 
 impl PieceManager {
-    pub fn new(
-        num_pieces: u32,
-        piece_length: u64,
-        total_size: u64,
-        hashes: Vec<[u8; 20]>,
-    ) -> Self {
+    pub fn new(num_pieces: u32, piece_length: u64, total_size: u64, hashes: Vec<[u8; 20]>) -> Self {
         Self {
             num_pieces,
             piece_length,
@@ -178,8 +170,8 @@ impl PieceManager {
             }
             let byte_idx = (i / 8) as usize;
             let bit_offset = 7 - (i % 8);
-            let peer_has = byte_idx < peer_bitfield.len()
-                && (peer_bitfield[byte_idx] >> bit_offset) & 1 == 1;
+            let peer_has =
+                byte_idx < peer_bitfield.len() && (peer_bitfield[byte_idx] >> bit_offset) & 1 == 1;
             if !peer_has {
                 continue;
             }
@@ -220,7 +212,7 @@ impl PieceManager {
         if top.is_empty() {
             Some(candidates[0].index)
         } else {
-            Some(top[rand::random::<usize>() % top.len()])
+            Some(top[rand::random_range(0..top.len())])
         }
     }
 
@@ -235,10 +227,7 @@ impl PieceManager {
         let have = self.have.lock();
         let pp = self.piece_priorities.lock();
         (0..self.num_pieces)
-            .filter(|&i| {
-                !have[i as usize]
-                    && pp[i as usize] != FilePriority::Skip
-            })
+            .filter(|&i| !have[i as usize] && pp[i as usize] != FilePriority::Skip)
             .collect()
     }
 
@@ -249,8 +238,7 @@ impl PieceManager {
         }
         let piece_size = self.piece_size(index);
         let hash = self.hashes[index as usize];
-        let collector =
-            Arc::new(Mutex::new(PieceCollector::new(index, piece_size, hash)));
+        let collector = Arc::new(Mutex::new(PieceCollector::new(index, piece_size, hash)));
         ip.insert(index, collector.clone());
         Some(collector)
     }
@@ -271,8 +259,7 @@ impl PieceManager {
         }
         let piece_size = self.piece_size(index);
         let hash = self.hashes[index as usize];
-        let collector =
-            Arc::new(Mutex::new(PieceCollector::new(index, piece_size, hash)));
+        let collector = Arc::new(Mutex::new(PieceCollector::new(index, piece_size, hash)));
         ip.insert(index, collector.clone());
         collector
     }
