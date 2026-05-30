@@ -1,4 +1,4 @@
-use crate::types::{FilePriority, BLOCK_SIZE};
+use crate::types::{BLOCK_SIZE, FilePriority};
 use parking_lot::Mutex;
 
 use std::collections::HashMap;

@@ -3,11 +3,7 @@ use crate::ui::theme;
 use repose_core::prelude::*;
 use repose_ui::{Box, Column, Row, Stack, Text, TextStyle, ViewExt};
 
-pub fn progress_bar_view(
-    progress: f32,
-    state: TorrentState,
-    width: f32,
-) -> View {
+pub fn progress_bar_view(progress: f32, state: TorrentState, width: f32) -> View {
     let fill_color = match state {
         TorrentState::Downloading => theme::downloading(),
         TorrentState::Seeding => theme::seeding(),
@@ -28,31 +24,21 @@ pub fn progress_bar_view(
     let fill_pct = progress.clamp(0.0, 1.0);
 
     Stack(Modifier::new().width(width).height(10.0)).child((
-        Box(
-            Modifier::new()
-                .fill_max_size()
-                .background(th.surface_container_highest)
-                .clip_rounded(5.0),
-        ),
-        Box(
-            Modifier::new()
-                .width(width * fill_pct)
-                .height(10.0)
-                .background(fill_color)
-                .clip_rounded(5.0),
-        ),
-        Box(
-            Modifier::new()
-                .fill_max_size()
-                .align_items(AlignItems::Center)
-                .justify_content(JustifyContent::Center)
-                .hit_passthrough(),
-        )
-        .child(
-            Text(label)
-                .size(9.0)
-                .color(Color::WHITE.with_alpha(210)),
-        ),
+        Box(Modifier::new()
+            .fill_max_size()
+            .background(th.surface_container_highest)
+            .clip_rounded(5.0)),
+        Box(Modifier::new()
+            .width(width * fill_pct)
+            .height(10.0)
+            .background(fill_color)
+            .clip_rounded(5.0)),
+        Box(Modifier::new()
+            .fill_max_size()
+            .align_items(AlignItems::Center)
+            .justify_content(JustifyContent::Center)
+            .hit_passthrough())
+        .child(Text(label).size(9.0).color(Color::WHITE.with_alpha(210))),
     ))
 }
 
@@ -73,16 +59,18 @@ pub fn piece_map_view(have: &[bool], available_width: f32) -> View {
         for col in 0..columns {
             let idx = row_idx * columns + col;
             if idx < have.len() {
-                let color = if have[idx] { success_color } else { empty_color };
+                let color = if have[idx] {
+                    success_color
+                } else {
+                    empty_color
+                };
                 cells.push(Box(Modifier::new()
                     .size(piece_size, piece_size)
                     .background(color)
                     .clip_rounded(1.0)));
             }
         }
-        row_views.push(
-            Row(Modifier::new().height(step)).child(cells),
-        );
+        row_views.push(Row(Modifier::new().height(step)).child(cells));
     }
 
     Column(Modifier::new().width(available_width)).child(row_views)

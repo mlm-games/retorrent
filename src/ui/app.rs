@@ -17,10 +17,10 @@ use crate::network::TorrentStats;
 use crate::tray::{AppTray, TrayCommand};
 use crate::types::*;
 use crate::ui::components;
-use crate::ui::icons::{icon, Symbols};
+use crate::ui::icons::{Symbols, icon};
 use crate::ui::theme;
-use repose_material::Symbol;
 use crate::ui::utils::*;
+use repose_material::Symbol;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Tab {
@@ -65,7 +65,10 @@ fn matches_filter(t: &TorrentRow, filter: FilterState) -> bool {
         FilterState::Seeding => t.stats.state == TorrentState::Seeding,
         FilterState::Paused => t.stats.state == TorrentState::Paused,
         FilterState::Complete => {
-            matches!(t.stats.state, TorrentState::Complete | TorrentState::Seeding)
+            matches!(
+                t.stats.state,
+                TorrentState::Complete | TorrentState::Seeding
+            )
         }
     }
 }
@@ -117,8 +120,7 @@ pub fn app(
     let torrents: Rc<Signal<Vec<TorrentRow>>> = remember(|| signal(Vec::new()));
     let global_dl: Rc<Signal<u64>> = remember(|| signal(0));
     let global_ul: Rc<Signal<u64>> = remember(|| signal(0));
-    let last_refresh: Rc<Signal<web_time::Instant>> =
-        remember(|| signal(web_time::Instant::now()));
+    let last_refresh: Rc<Signal<web_time::Instant>> = remember(|| signal(web_time::Instant::now()));
 
     // Process tray commands
     if let Ok(guard) = tray_cmd_rx.lock() {
@@ -215,19 +217,16 @@ pub fn app(
         .enumerate()
         .filter(|(_, t)| {
             let state_match = matches_filter(t, filter);
-            let query_match = query.is_empty()
-                || t.name
-                    .to_lowercase()
-                    .contains(&query.to_lowercase());
+            let query_match =
+                query.is_empty() || t.name.to_lowercase().contains(&query.to_lowercase());
             state_match && query_match
         })
         .map(|(i, _)| i)
         .collect();
 
     let selected_hash = selected.get();
-    let selected_torrent = selected_hash.and_then(|hash| {
-        all_torrents.iter().find(|t| t.info_hash == hash).cloned()
-    });
+    let selected_torrent =
+        selected_hash.and_then(|hash| all_torrents.iter().find(|t| t.info_hash == hash).cloned());
 
     // Main content
     let content = Column(Modifier::new().fill_max_size()).child((
@@ -252,7 +251,12 @@ pub fn app(
             selected_torrent,
             engine.clone(),
         ),
-        status_bar_view(global_dl.get(), global_ul.get(), all_torrents.len(), &engine),
+        status_bar_view(
+            global_dl.get(),
+            global_ul.get(),
+            all_torrents.len(),
+            &engine,
+        ),
     ));
 
     // Dialogs rendered as overlays
@@ -291,12 +295,10 @@ fn main_shell_view(
 ) -> View {
     let th = theme();
 
-    Row(
-        Modifier::new()
-            .fill_max_size()
-            .padding(12.0)
-            .background(th.background),
-    )
+    Row(Modifier::new()
+        .fill_max_size()
+        .padding(12.0)
+        .background(th.background))
     .child((
         Surface(
             Modifier::new()
@@ -336,47 +338,51 @@ fn top_bar_view(
 ) -> View {
     let th = theme();
 
-    Row(
-        Modifier::new()
-            .fill_max_width()
-            .height(72.0)
-            .padding(12.0)
-            .background(th.surface)
-            .align_items(AlignItems::Center),
-    )
+    Row(Modifier::new()
+        .fill_max_width()
+        .height(72.0)
+        .padding(12.0)
+        .background(th.surface)
+        .align_items(AlignItems::Center))
     .child({
         let mut children: Vec<View> = Vec::new();
 
-        children.push(Row(Modifier::new().align_items(AlignItems::Center)).child((
-            Surface(
-                Modifier::new()
-                    .size(44.0, 44.0)
-                    .background(th.primary_container)
-                    .clip_rounded(14.0),
-                Box(
+        children.push(
+            Row(Modifier::new().align_items(AlignItems::Center)).child((
+                Surface(
                     Modifier::new()
+                        .size(44.0, 44.0)
+                        .background(th.primary_container)
+                        .clip_rounded(14.0),
+                    Box(Modifier::new()
                         .fill_max_size()
                         .align_items(AlignItems::Center)
-                        .justify_content(JustifyContent::Center),
-                )
-                .child(icon(Symbols::CLOUD_DOWNLOAD, 24.0, th.on_primary_container)),
-            ),
-            Box(Modifier::new().width(12.0)),
-            Column(Modifier::new()).child((
-                Text("Retorrent")
-                    .size(18.0)
-                    .color(th.on_surface),
-                Text(format!("{} torrents", torrents.len()))
-                    .size(12.0)
-                    .color(th.on_surface_variant),
+                        .justify_content(JustifyContent::Center))
+                    .child(icon(Symbols::CLOUD_DOWNLOAD, 24.0, th.on_primary_container)),
+                ),
+                Box(Modifier::new().width(12.0)),
+                Column(Modifier::new()).child((
+                    Text("Retorrent").size(18.0).color(th.on_surface),
+                    Text(format!("{} torrents", torrents.len()))
+                        .size(12.0)
+                        .color(th.on_surface_variant),
+                )),
             )),
-        )));
+        );
 
         children.push(Box(Modifier::new().width(24.0)));
 
-        children.push(stat_pill(Symbols::DOWNLOAD, format_speed(global_dl), theme::downloading()));
+        children.push(stat_pill(
+            Symbols::DOWNLOAD,
+            format_speed(global_dl),
+            theme::downloading(),
+        ));
         children.push(Box(Modifier::new().width(8.0)));
-        children.push(stat_pill(Symbols::UPLOAD, format_speed(global_ul), theme::seeding()));
+        children.push(stat_pill(
+            Symbols::UPLOAD,
+            format_speed(global_ul),
+            theme::seeding(),
+        ));
 
         children.push(Spacer());
 
@@ -407,11 +413,13 @@ fn top_bar_view(
                     });
                 }
             },
-            || Row(Modifier::new().align_items(AlignItems::Center)).child((
-                icon(Symbols::FOLDER_OPEN, 18.0, th.on_primary),
-                Box(Modifier::new().width(6.0)),
-                Text("Torrent").size(13.0),
-            )),
+            || {
+                Row(Modifier::new().align_items(AlignItems::Center)).child((
+                    icon(Symbols::FOLDER_OPEN, 18.0, th.on_primary),
+                    Box(Modifier::new().width(6.0)),
+                    Text("Torrent").size(13.0),
+                ))
+            },
         ));
 
         children.push(Box(Modifier::new().width(8.0)));
@@ -422,11 +430,13 @@ fn top_bar_view(
                 let s = show_magnet_dialog.clone();
                 move || s.set(true)
             },
-            || Row(Modifier::new().align_items(AlignItems::Center)).child((
-                icon(Symbols::LINK, 18.0, th.on_surface),
-                Box(Modifier::new().width(6.0)),
-                Text("Magnet").size(13.0),
-            )),
+            || {
+                Row(Modifier::new().align_items(AlignItems::Center)).child((
+                    icon(Symbols::LINK, 18.0, th.on_surface),
+                    Box(Modifier::new().width(6.0)),
+                    Text("Magnet").size(13.0),
+                ))
+            },
         ));
 
         children.push(Box(Modifier::new().width(8.0)));
@@ -459,18 +469,15 @@ fn top_bar_view(
             },
         ));
 
-        children.push(IconButton(
-            icon(Symbols::DELETE, 20.0, th.error),
-            {
-                let selected = selected.clone();
-                let s = show_remove_dialog.clone();
-                move || {
-                    if selected.get().is_some() {
-                        s.set(true);
-                    }
+        children.push(IconButton(icon(Symbols::DELETE, 20.0, th.error), {
+            let selected = selected.clone();
+            let s = show_remove_dialog.clone();
+            move || {
+                if selected.get().is_some() {
+                    s.set(true);
                 }
-            },
-        ));
+            }
+        }));
 
         children.push(Box(Modifier::new().width(4.0)));
 
@@ -495,7 +502,12 @@ fn stat_pill(symbol: Symbol, value: String, color: Color) -> View {
             .background(th.surface_container_high)
             .border(1.0, th.outline_variant, 17.0)
             .clip_rounded(17.0)
-            .padding_values(PaddingValues { left: 12.0, right: 12.0, top: 6.0, bottom: 6.0 }),
+            .padding_values(PaddingValues {
+                left: 12.0,
+                right: 12.0,
+                top: 6.0,
+                bottom: 6.0,
+            }),
         Row(Modifier::new().align_items(AlignItems::Center)).child((
             icon(symbol, 17.0, color),
             Box(Modifier::new().width(6.0)),
@@ -528,32 +540,31 @@ fn filter_search_panel(
     .child((
         TextField(
             "Search torrents",
-            Modifier::new()
-                .fill_max_width()
-                .height(42.0),
+            Modifier::new().fill_max_width().height(42.0),
             Some({
                 let q = search_query.clone();
                 move |v| q.set(v)
             }),
             None::<fn(String)>,
         ),
-
         Box(Modifier::new().height(10.0)),
-
-        Row(Modifier::new().fill_max_width().align_items(AlignItems::Center)).child(
+        Row(Modifier::new()
+            .fill_max_width()
+            .align_items(AlignItems::Center))
+        .child(
             filters
                 .into_iter()
                 .map(|(state, label, sym)| {
-                        material3::FilterChip(
-                            selected == state,
-                            {
-                                let f = filter_state.clone();
-                                move || f.set(state)
-                            },
-                            Text(label).size(12.0),
-                            Some(icon(sym, 16.0, th.on_surface_variant)),
-                            None,
-                        )
+                    material3::FilterChip(
+                        selected == state,
+                        {
+                            let f = filter_state.clone();
+                            move || f.set(state)
+                        },
+                        Text(label).size(12.0),
+                        Some(icon(sym, 16.0, th.on_surface_variant)),
+                        None,
+                    )
                 })
                 .collect::<Vec<_>>(),
         ),
@@ -570,17 +581,13 @@ fn torrent_list_view(
     let selected_hash = selected.get();
 
     if filtered_indices.is_empty() {
-        return Box(
-            Modifier::new()
-                .fill_max_size()
-                .align_items(AlignItems::Center)
-                .justify_content(JustifyContent::Center),
-        )
+        return Box(Modifier::new()
+            .fill_max_size()
+            .align_items(AlignItems::Center)
+            .justify_content(JustifyContent::Center))
         .child(
             Column(Modifier::new().align_items(AlignItems::Center)).child((
-                Text("No torrents found")
-                    .size(15.0)
-                    .color(th.on_surface),
+                Text("No torrents found").size(15.0).color(th.on_surface),
                 Box(Modifier::new().height(4.0)),
                 Text("Add a .torrent file or magnet link to get started.")
                     .size(12.0)
@@ -592,7 +599,17 @@ fn torrent_list_view(
     ScrollArea(
         Modifier::new().fill_max_size(),
         scroll_state,
-        Column(Modifier::new().fill_max_width().padding_values(PaddingValues { left: 8.0, right: 8.0, top: 0.0, bottom: 8.0 })).child(
+        Column(
+            Modifier::new()
+                .fill_max_width()
+                .padding_values(PaddingValues {
+                    left: 8.0,
+                    right: 8.0,
+                    top: 0.0,
+                    bottom: 8.0,
+                }),
+        )
+        .child(
             filtered_indices
                 .iter()
                 .copied()
@@ -629,11 +646,20 @@ fn torrent_card_view(
     Surface(
         Modifier::new()
             .fill_max_width()
-            .padding_values(PaddingValues { left: 4.0, right: 4.0, top: 4.0, bottom: 8.0 })
+            .padding_values(PaddingValues {
+                left: 4.0,
+                right: 4.0,
+                top: 4.0,
+                bottom: 8.0,
+            })
             .background(bg)
             .border(
                 1.0,
-                if is_selected { th.primary } else { th.outline_variant },
+                if is_selected {
+                    th.primary
+                } else {
+                    th.outline_variant
+                },
                 16.0,
             )
             .clip_rounded(16.0)
@@ -649,49 +675,55 @@ fn torrent_card_view(
                 move |_| selected.set(Some(hash))
             }),
         Row(Modifier::new().fill_max_width()).child((
-            Box(
-                Modifier::new()
-                    .width(4.0)
-                    .fill_max_height()
-                    .background(state_color),
-            ),
-
+            Box(Modifier::new()
+                .width(4.0)
+                .fill_max_height()
+                .background(state_color)),
             Column(Modifier::new().fill_max_width().padding(12.0)).child((
-                Row(Modifier::new().fill_max_width().align_items(AlignItems::Center)).child((
+                Row(Modifier::new()
+                    .fill_max_width()
+                    .align_items(AlignItems::Center))
+                .child((
                     icon(state_symbol, 20.0, state_color),
                     Box(Modifier::new().width(8.0)),
-                    Text(&torrent.name)
-                        .size(14.0)
-                        .color(th.on_surface),
+                    Text(&torrent.name).size(14.0).color(th.on_surface),
                     Spacer(),
                     Text(format_bytes(torrent.total_size))
                         .size(11.0)
                         .color(th.on_surface_variant),
                 )),
-
                 Box(Modifier::new().height(8.0)),
-
-                components::progress_bar_view(
-                    torrent.stats.progress,
-                    torrent.stats.state,
-                    392.0,
-                ),
-
+                components::progress_bar_view(torrent.stats.progress, torrent.stats.state, 392.0),
                 Box(Modifier::new().height(8.0)),
-
-                Row(Modifier::new().fill_max_width().align_items(AlignItems::Center)).child({
+                Row(Modifier::new()
+                    .fill_max_width()
+                    .align_items(AlignItems::Center))
+                .child({
                     let mut m: Vec<View> = Vec::new();
-                    m.push(metric_compact(Symbols::DOWNLOAD, format_speed(torrent.stats.download_rate), theme::downloading()));
+                    m.push(metric_compact(
+                        Symbols::DOWNLOAD,
+                        format_speed(torrent.stats.download_rate),
+                        theme::downloading(),
+                    ));
                     m.push(Box(Modifier::new().width(8.0)));
-                    m.push(metric_compact(Symbols::UPLOAD, format_speed(torrent.stats.upload_rate), theme::seeding()));
+                    m.push(metric_compact(
+                        Symbols::UPLOAD,
+                        format_speed(torrent.stats.upload_rate),
+                        theme::seeding(),
+                    ));
                     m.push(Box(Modifier::new().width(8.0)));
                     m.push(metric_text(format!("{} seeds", torrent.stats.seeders)));
                     m.push(Box(Modifier::new().width(8.0)));
-                    m.push(metric_text(format!("{} peers", torrent.stats.connected_peers)));
+                    m.push(metric_text(format!(
+                        "{} peers",
+                        torrent.stats.connected_peers
+                    )));
                     m.push(Spacer());
-                    m.push(Text(format_eta(torrent.stats.eta_seconds))
-                        .size(11.0)
-                        .color(th.on_surface_variant));
+                    m.push(
+                        Text(format_eta(torrent.stats.eta_seconds))
+                            .size(11.0)
+                            .color(th.on_surface_variant),
+                    );
                     m
                 }),
             )),
@@ -710,9 +742,7 @@ fn metric_compact(symbol: Symbol, value: String, color: Color) -> View {
 }
 
 fn metric_text(value: String) -> View {
-    Text(value)
-        .size(10.5)
-        .color(theme().on_surface_variant)
+    Text(value).size(10.5).color(theme().on_surface_variant)
 }
 
 fn details_panel_view_v2(
@@ -725,17 +755,13 @@ fn details_panel_view_v2(
     let torrent = match torrent {
         Some(t) => t,
         None => {
-            return Box(
-                Modifier::new()
-                    .fill_max_size()
-                    .align_items(AlignItems::Center)
-                    .justify_content(JustifyContent::Center),
-            )
+            return Box(Modifier::new()
+                .fill_max_size()
+                .align_items(AlignItems::Center)
+                .justify_content(JustifyContent::Center))
             .child(
                 Column(Modifier::new().align_items(AlignItems::Center)).child((
-                    Text("Select a torrent")
-                        .size(18.0)
-                        .color(th.on_surface),
+                    Text("Select a torrent").size(18.0).color(th.on_surface),
                     Box(Modifier::new().height(6.0)),
                     Text("Torrent details, files, peers, trackers, and pieces will appear here.")
                         .size(12.0)
@@ -771,44 +797,46 @@ fn details_header(torrent: &TorrentRow) -> View {
             .background(th.surface_container),
     )
     .child((
-        Row(Modifier::new().fill_max_width().align_items(AlignItems::Center)).child((
+        Row(Modifier::new()
+            .fill_max_width()
+            .align_items(AlignItems::Center))
+        .child((
             Surface(
                 Modifier::new()
                     .size(46.0, 46.0)
                     .background(state_color.with_alpha(45))
                     .clip_rounded(14.0),
-                Box(
-                    Modifier::new()
-                        .fill_max_size()
-                        .align_items(AlignItems::Center)
-                        .justify_content(JustifyContent::Center),
-                )
-                .child(icon(torrent_state_symbol(torrent.stats.state), 25.0, state_color)),
+                Box(Modifier::new()
+                    .fill_max_size()
+                    .align_items(AlignItems::Center)
+                    .justify_content(JustifyContent::Center))
+                .child(icon(
+                    torrent_state_symbol(torrent.stats.state),
+                    25.0,
+                    state_color,
+                )),
             ),
-
             Box(Modifier::new().width(12.0)),
-
             Column(Modifier::new().flex_grow(1.0)).child((
-                Text(&torrent.name)
-                    .size(18.0)
-                    .color(th.on_surface),
+                Text(&torrent.name).size(18.0).color(th.on_surface),
                 Text(torrent.stats.state.to_string())
                     .size(12.0)
                     .color(th.on_surface_variant),
             )),
-
-            stat_pill(Symbols::DOWNLOAD, format_speed(torrent.stats.download_rate), theme::downloading()),
+            stat_pill(
+                Symbols::DOWNLOAD,
+                format_speed(torrent.stats.download_rate),
+                theme::downloading(),
+            ),
             Box(Modifier::new().width(8.0)),
-            stat_pill(Symbols::UPLOAD, format_speed(torrent.stats.upload_rate), theme::seeding()),
+            stat_pill(
+                Symbols::UPLOAD,
+                format_speed(torrent.stats.upload_rate),
+                theme::seeding(),
+            ),
         )),
-
         Box(Modifier::new().height(14.0)),
-
-        components::progress_bar_view(
-            torrent.stats.progress,
-            torrent.stats.state,
-            640.0,
-        ),
+        components::progress_bar_view(torrent.stats.progress, torrent.stats.state, 640.0),
     ))
 }
 
@@ -854,19 +882,42 @@ fn general_tab_view_v2(torrent: &TorrentRow) -> View {
         remember_scroll_state("general_tab_v2"),
         Column(Modifier::new().fill_max_width().padding(16.0)).child((
             Row(Modifier::new().fill_max_width()).child((
-                stat_card(Symbols::CLOUD_DOWNLOAD, "Downloaded", format_bytes(torrent.stats.downloaded), theme::downloading()),
+                stat_card(
+                    Symbols::CLOUD_DOWNLOAD,
+                    "Downloaded",
+                    format_bytes(torrent.stats.downloaded),
+                    theme::downloading(),
+                ),
                 Box(Modifier::new().width(12.0)),
-                stat_card(Symbols::CLOUD_UPLOAD, "Uploaded", format_bytes(torrent.stats.uploaded), theme::seeding()),
+                stat_card(
+                    Symbols::CLOUD_UPLOAD,
+                    "Uploaded",
+                    format_bytes(torrent.stats.uploaded),
+                    theme::seeding(),
+                ),
                 Box(Modifier::new().width(12.0)),
-                stat_card(Symbols::SCHEDULE, "ETA", format_eta(torrent.stats.eta_seconds), theme::warning()),
+                stat_card(
+                    Symbols::SCHEDULE,
+                    "ETA",
+                    format_eta(torrent.stats.eta_seconds),
+                    theme::warning(),
+                ),
             )),
-
             Box(Modifier::new().height(12.0)),
-
             Row(Modifier::new().fill_max_width()).child((
-                stat_card(Symbols::GROUP, "Peers", torrent.stats.connected_peers.to_string(), th.primary),
+                stat_card(
+                    Symbols::GROUP,
+                    "Peers",
+                    torrent.stats.connected_peers.to_string(),
+                    th.primary,
+                ),
                 Box(Modifier::new().width(12.0)),
-                stat_card(Symbols::UPLOAD, "Seeds", torrent.stats.seeders.to_string(), theme::seeding()),
+                stat_card(
+                    Symbols::UPLOAD,
+                    "Seeds",
+                    torrent.stats.seeders.to_string(),
+                    theme::seeding(),
+                ),
                 Box(Modifier::new().width(12.0)),
                 stat_card(
                     Symbols::MEMORY,
@@ -879,17 +930,24 @@ fn general_tab_view_v2(torrent: &TorrentRow) -> View {
                     theme::accent(),
                 ),
             )),
-
             Box(Modifier::new().height(18.0)),
-
-            info_section("Torrent", vec![
-                ("Name", torrent.name.clone()),
-                ("Info Hash", torrent.info_hash.to_string()),
-                ("Total Size", format_bytes(torrent.total_size)),
-                ("Progress", format!("{:.2}%", torrent.stats.progress * 100.0)),
-                ("Ratio", format_ratio(torrent.stats.uploaded, torrent.stats.downloaded)),
-                ("Status", torrent.stats.state.to_string()),
-            ]),
+            info_section(
+                "Torrent",
+                vec![
+                    ("Name", torrent.name.clone()),
+                    ("Info Hash", torrent.info_hash.to_string()),
+                    ("Total Size", format_bytes(torrent.total_size)),
+                    (
+                        "Progress",
+                        format!("{:.2}%", torrent.stats.progress * 100.0),
+                    ),
+                    (
+                        "Ratio",
+                        format_ratio(torrent.stats.uploaded, torrent.stats.downloaded),
+                    ),
+                    ("Status", torrent.stats.state.to_string()),
+                ],
+            ),
         )),
     )
 }
@@ -914,14 +972,10 @@ fn stat_card(
             Row(Modifier::new().align_items(AlignItems::Center)).child((
                 icon(symbol, 18.0, color),
                 Box(Modifier::new().width(6.0)),
-                Text(label.into())
-                    .size(11.0)
-                    .color(th.on_surface_variant),
+                Text(label.into()).size(11.0).color(th.on_surface_variant),
             )),
             Spacer(),
-            Text(value.into())
-                .size(17.0)
-                .color(th.on_surface),
+            Text(value.into()).size(17.0).color(th.on_surface),
         )),
     )
 }
@@ -938,22 +992,26 @@ fn info_section(title: &str, rows: Vec<(&str, String)>) -> View {
             .padding(16.0),
         Column(Modifier::new().fill_max_width()).child({
             let mut views: Vec<View> = vec![
-                Text(title)
-                    .size(15.0)
-                    .color(th.on_surface),
+                Text(title).size(15.0).color(th.on_surface),
                 Box(Modifier::new().height(10.0)),
             ];
 
             for (label, value) in rows {
                 views.push(
-                    Row(Modifier::new().fill_max_width().padding_values(PaddingValues { left: 0.0, right: 0.0, top: 4.0, bottom: 4.0 })).child((
+                    Row(Modifier::new()
+                        .fill_max_width()
+                        .padding_values(PaddingValues {
+                            left: 0.0,
+                            right: 0.0,
+                            top: 4.0,
+                            bottom: 4.0,
+                        }))
+                    .child((
                         Text(label)
                             .size(12.0)
                             .color(th.on_surface_variant)
                             .modifier(Modifier::new().width(130.0)),
-                        Text(value)
-                            .size(12.0)
-                            .color(th.on_surface),
+                        Text(value).size(12.0).color(th.on_surface),
                     )),
                 );
             }
@@ -973,17 +1031,15 @@ fn files_tab_view(torrent: &TorrentRow, _info_hash: InfoHash, _engine: Arc<Torre
         remember_scroll_state("files_tab"),
         Column(Modifier::new().fill_max_width().padding(4.0)).child({
             let mut views: Vec<View> = Vec::new();
-            views.push(
-                Row(Modifier::new().fill_max_width().padding(4.0)).child((
-                    Text("File").size(12.0).color(th.on_surface),
-                    Box(Modifier::new().width(12.0)),
-                    Text("Size").size(12.0).color(th.on_surface),
-                    Box(Modifier::new().width(12.0)),
-                    Text("Progress").size(12.0).color(th.on_surface),
-                    Box(Modifier::new().width(12.0)),
-                    Text("Priority").size(12.0).color(th.on_surface),
-                )),
-            );
+            views.push(Row(Modifier::new().fill_max_width().padding(4.0)).child((
+                Text("File").size(12.0).color(th.on_surface),
+                Box(Modifier::new().width(12.0)),
+                Text("Size").size(12.0).color(th.on_surface),
+                Box(Modifier::new().width(12.0)),
+                Text("Progress").size(12.0).color(th.on_surface),
+                Box(Modifier::new().width(12.0)),
+                Text("Priority").size(12.0).color(th.on_surface),
+            )));
 
             for (fi, file) in files.iter().enumerate() {
                 let display_name = file.path.rsplit('/').next().unwrap_or(&file.path);
@@ -1000,7 +1056,9 @@ fn files_tab_view(torrent: &TorrentRow, _info_hash: InfoHash, _engine: Arc<Torre
                             .size(11.0)
                             .color(th.on_surface_variant),
                         Box(Modifier::new().width(8.0)),
-                        material3::LinearProgressIndicator(Some(torrent.stats.progress.clamp(0.0, 1.0))),
+                        material3::LinearProgressIndicator(Some(
+                            torrent.stats.progress.clamp(0.0, 1.0),
+                        )),
                         Box(Modifier::new().width(8.0)),
                         Text(current_prio.to_string())
                             .size(11.0)
@@ -1015,10 +1073,19 @@ fn files_tab_view(torrent: &TorrentRow, _info_hash: InfoHash, _engine: Arc<Torre
 
 fn peers_tab_view(torrent: &TorrentRow) -> View {
     let th = theme();
-    Column(Modifier::new().fill_max_width().min_height(200.0).padding(8.0)).child((
-        Text(format!("Connected Peers: {}", torrent.stats.connected_peers))
-            .size(12.0)
-            .color(th.on_surface),
+    Column(
+        Modifier::new()
+            .fill_max_width()
+            .min_height(200.0)
+            .padding(8.0),
+    )
+    .child((
+        Text(format!(
+            "Connected Peers: {}",
+            torrent.stats.connected_peers
+        ))
+        .size(12.0)
+        .color(th.on_surface),
         Box(Modifier::new().height(8.0)),
         Text("(Peer details shown during active connections)")
             .size(11.0)
@@ -1042,9 +1109,7 @@ fn trackers_tab_view(torrent: &TorrentRow) -> View {
                             .size(11.0)
                             .color(th.on_surface_variant),
                         Box(Modifier::new().width(4.0)),
-                        Text(tracker)
-                            .size(11.0)
-                            .color(theme::accent()),
+                        Text(tracker).size(11.0).color(theme::accent()),
                     ))
                 })
                 .collect::<Vec<_>>(),
@@ -1056,10 +1121,19 @@ fn pieces_tab_view(torrent: &TorrentRow) -> View {
     let th = theme();
     let completed = torrent.have_pieces.iter().filter(|&&v| v).count();
 
-    Column(Modifier::new().fill_max_width().min_height(200.0).padding(8.0)).child((
-        Text(format!("Pieces: {} / {} completed", completed, torrent.num_pieces))
-            .size(12.0)
-            .color(th.on_surface),
+    Column(
+        Modifier::new()
+            .fill_max_width()
+            .min_height(200.0)
+            .padding(8.0),
+    )
+    .child((
+        Text(format!(
+            "Pieces: {} / {} completed",
+            completed, torrent.num_pieces
+        ))
+        .size(12.0)
+        .color(th.on_surface),
         Box(Modifier::new().height(8.0)),
         ScrollArea(
             Modifier::new().fill_max_width(),
@@ -1069,18 +1143,21 @@ fn pieces_tab_view(torrent: &TorrentRow) -> View {
     ))
 }
 
-fn status_bar_view(global_dl: u64, global_ul: u64, torrent_count: usize, engine: &TorrentEngine) -> View {
+fn status_bar_view(
+    global_dl: u64,
+    global_ul: u64,
+    torrent_count: usize,
+    engine: &TorrentEngine,
+) -> View {
     let th = theme();
     let port = engine.config.listen_port;
 
-    Row(
-        Modifier::new()
-            .fill_max_width()
-            .height(24.0)
-            .padding(4.0)
-            .background(th.surface_container_low)
-            .align_items(AlignItems::Center),
-    )
+    Row(Modifier::new()
+        .fill_max_width()
+        .height(24.0)
+        .padding(4.0)
+        .background(th.surface_container_low)
+        .align_items(AlignItems::Center))
     .child((
         Text(format!("Torrents: {}", torrent_count))
             .size(11.0)
@@ -1112,16 +1189,14 @@ fn magnet_dialog_view(
     }
 
     Stack(Modifier::new().fill_max_size()).child((
-        Box(
-            Modifier::new()
-                .fill_max_size()
-                .background(th.scrim.with_alpha(170))
-                .clickable()
-                .on_pointer_down({
-                    let s = show_magnet_dialog.clone();
-                    move |_| s.set(false)
-                }),
-        ),
+        Box(Modifier::new()
+            .fill_max_size()
+            .background(th.scrim.with_alpha(170))
+            .clickable()
+            .on_pointer_down({
+                let s = show_magnet_dialog.clone();
+                move |_| s.set(false)
+            })),
         Surface(
             Modifier::new()
                 .width(500.0)
@@ -1129,9 +1204,7 @@ fn magnet_dialog_view(
                 .clip_rounded(12.0)
                 .padding(24.0),
             Column(Modifier::new()).child((
-                Text("Add Magnet Link")
-                    .size(18.0)
-                    .color(th.on_surface),
+                Text("Add Magnet Link").size(18.0).color(th.on_surface),
                 Box(Modifier::new().height(12.0)),
                 TextField(
                     "magnet:?xt=urn:btih:...",
@@ -1143,7 +1216,10 @@ fn magnet_dialog_view(
                     None::<fn(String)>,
                 ),
                 Box(Modifier::new().height(16.0)),
-                Row(Modifier::new().align_items(AlignItems::Center).justify_content(JustifyContent::End)).child((
+                Row(Modifier::new()
+                    .align_items(AlignItems::Center)
+                    .justify_content(JustifyContent::End))
+                .child((
                     TextButton(
                         Modifier::new(),
                         {
@@ -1197,16 +1273,14 @@ fn remove_dialog_view(
     }
 
     Stack(Modifier::new().fill_max_size()).child((
-        Box(
-            Modifier::new()
-                .fill_max_size()
-                .background(th.scrim.with_alpha(170))
-                .clickable()
-                .on_pointer_down({
-                    let s = show_remove_dialog.clone();
-                    move |_| s.set(false)
-                }),
-        ),
+        Box(Modifier::new()
+            .fill_max_size()
+            .background(th.scrim.with_alpha(170))
+            .clickable()
+            .on_pointer_down({
+                let s = show_remove_dialog.clone();
+                move |_| s.set(false)
+            })),
         Surface(
             Modifier::new()
                 .width(400.0)
@@ -1214,9 +1288,7 @@ fn remove_dialog_view(
                 .clip_rounded(12.0)
                 .padding(24.0),
             Column(Modifier::new()).child((
-                Text("Remove Torrent")
-                    .size(18.0)
-                    .color(th.on_surface),
+                Text("Remove Torrent").size(18.0).color(th.on_surface),
                 Box(Modifier::new().height(12.0)),
                 Text("Are you sure you want to remove this torrent?")
                     .size(14.0)
@@ -1230,7 +1302,10 @@ fn remove_dialog_view(
                     .size(13.0)
                     .color(th.on_surface),
                 Box(Modifier::new().height(16.0)),
-                Row(Modifier::new().align_items(AlignItems::Center).justify_content(JustifyContent::End)).child((
+                Row(Modifier::new()
+                    .align_items(AlignItems::Center)
+                    .justify_content(JustifyContent::End))
+                .child((
                     TextButton(
                         Modifier::new(),
                         {
@@ -1278,16 +1353,14 @@ fn settings_dialog_view(show_settings: Rc<Signal<bool>>, engine: Arc<TorrentEngi
     let config2 = config.clone();
 
     Stack(Modifier::new().fill_max_size()).child((
-        Box(
-            Modifier::new()
-                .fill_max_size()
-                .background(th.scrim.with_alpha(170))
-                .clickable()
-                .on_pointer_down({
-                    let s = show_settings.clone();
-                    move |_| s.set(false)
-                }),
-        ),
+        Box(Modifier::new()
+            .fill_max_size()
+            .background(th.scrim.with_alpha(170))
+            .clickable()
+            .on_pointer_down({
+                let s = show_settings.clone();
+                move |_| s.set(false)
+            })),
         Surface(
             Modifier::new()
                 .width(500.0)
@@ -1296,9 +1369,7 @@ fn settings_dialog_view(show_settings: Rc<Signal<bool>>, engine: Arc<TorrentEngi
                 .clip_rounded(12.0)
                 .padding(24.0),
             Column(Modifier::new()).child((
-                Text("\u{2699} Settings")
-                    .size(18.0)
-                    .color(th.on_surface),
+                Text("\u{2699} Settings").size(18.0).color(th.on_surface),
                 Box(Modifier::new().height(12.0)),
                 ScrollArea(
                     Modifier::new().fill_max_width().max_height(400.0),
@@ -1313,11 +1384,26 @@ fn settings_dialog_view(show_settings: Rc<Signal<bool>>, engine: Arc<TorrentEngi
                         let settings_fields: Vec<(&str, u32, u32, u32)> = vec![
                             ("Listen Port:", cfg.listen_port as u32, 1024, 65535),
                             ("Max Connections:", cfg.max_connections as u32, 1, 2000),
-                            ("Max Per Torrent:", cfg.max_connections_per_torrent as u32, 1, 500),
+                            (
+                                "Max Per Torrent:",
+                                cfg.max_connections_per_torrent as u32,
+                                1,
+                                500,
+                            ),
                             ("Pipeline Depth:", cfg.pipeline_depth as u32, 1, 128),
                             ("Upload Slots:", cfg.upload_slots as u32, 1, 20),
-                            ("Max DL Rate (0=\u{221E}):", cfg.max_download_rate as u32, 0, 1000000),
-                            ("Max UL Rate (0=\u{221E}):", cfg.max_upload_rate as u32, 0, 1000000),
+                            (
+                                "Max DL Rate (0=\u{221E}):",
+                                cfg.max_download_rate as u32,
+                                0,
+                                1000000,
+                            ),
+                            (
+                                "Max UL Rate (0=\u{221E}):",
+                                cfg.max_upload_rate as u32,
+                                0,
+                                1000000,
+                            ),
                         ];
 
                         for (label, val, _min, _max) in settings_fields {
@@ -1327,9 +1413,7 @@ fn settings_dialog_view(show_settings: Rc<Signal<bool>>, engine: Arc<TorrentEngi
                                         .size(12.0)
                                         .color(th.on_surface_variant)
                                         .modifier(Modifier::new().width(180.0)),
-                                    Text(val.to_string())
-                                        .size(12.0)
-                                        .color(th.on_surface),
+                                    Text(val.to_string()).size(12.0).color(th.on_surface),
                                 )),
                             );
                         }
@@ -1339,9 +1423,7 @@ fn settings_dialog_view(show_settings: Rc<Signal<bool>>, engine: Arc<TorrentEngi
                         views.push(Box(Modifier::new().height(8.0)));
                         views.push(
                             Row(Modifier::new().fill_max_width()).child((
-                                Text("Directory:")
-                                    .size(12.0)
-                                    .color(th.on_surface_variant),
+                                Text("Directory:").size(12.0).color(th.on_surface_variant),
                                 Text(cfg.download_dir.to_string_lossy())
                                     .size(12.0)
                                     .color(th.on_surface),
@@ -1357,7 +1439,10 @@ fn settings_dialog_view(show_settings: Rc<Signal<bool>>, engine: Arc<TorrentEngi
                     }),
                 ),
                 Box(Modifier::new().height(16.0)),
-                Row(Modifier::new().align_items(AlignItems::Center).justify_content(JustifyContent::End)).child((
+                Row(Modifier::new()
+                    .align_items(AlignItems::Center)
+                    .justify_content(JustifyContent::End))
+                .child((
                     TextButton(
                         Modifier::new(),
                         {

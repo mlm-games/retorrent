@@ -85,11 +85,7 @@ impl TrackerClient {
         let info_hash_encoded = urlencoding_bytes(info_hash.as_bytes());
         let peer_id_encoded = urlencoding_bytes(&peer_id.0);
 
-        let sep = if announce_url.contains('?') {
-            "&"
-        } else {
-            "?"
-        };
+        let sep = if announce_url.contains('?') { "&" } else { "?" };
 
         let mut url = format!(
             "{}{}info_hash={}&peer_id={}&port={}&uploaded={}&downloaded={}&left={}&compact=1&numwant=100",
@@ -158,10 +154,7 @@ impl TrackerClient {
         })
     }
 
-    fn parse_peers(
-        &self,
-        response: &crate::bencode::BencodeValue,
-    ) -> Result<Vec<SocketAddrV4>> {
+    fn parse_peers(&self, response: &crate::bencode::BencodeValue) -> Result<Vec<SocketAddrV4>> {
         let peers_val = response
             .dict_get("peers")
             .ok_or_else(|| TorrentError::Tracker("Missing peers".to_string()))?;
@@ -184,10 +177,8 @@ impl TrackerClient {
                             .get("ip")
                             .and_then(|v| v.as_string())
                             .unwrap_or("0.0.0.0");
-                        let port = dict
-                            .get("port")
-                            .and_then(|v| v.as_integer())
-                            .unwrap_or(0) as u16;
+                        let port =
+                            dict.get("port").and_then(|v| v.as_integer()).unwrap_or(0) as u16;
 
                         if let Ok(ip) = ip_str.parse::<Ipv4Addr>() {
                             peers.push(SocketAddrV4::new(ip, port));
@@ -211,12 +202,12 @@ impl TrackerClient {
         left: u64,
         event: Option<&str>,
     ) -> Result<TrackerResponse> {
-        use tokio::net::UdpSocket;
         use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
         use std::io::Cursor;
+        use tokio::net::UdpSocket;
 
-        let url = url::Url::parse(announce_url)
-            .map_err(|e| TorrentError::Tracker(e.to_string()))?;
+        let url =
+            url::Url::parse(announce_url).map_err(|e| TorrentError::Tracker(e.to_string()))?;
 
         let host = url.host_str().unwrap_or("127.0.0.1");
         let port_tracker = url.port().unwrap_or(80);
@@ -232,13 +223,9 @@ impl TrackerClient {
 
         let transaction_id: u32 = rand::random();
         let mut connect_req = Vec::with_capacity(16);
-        connect_req
-            .write_u64::<BigEndian>(0x41727101980)
-            .unwrap();
+        connect_req.write_u64::<BigEndian>(0x41727101980).unwrap();
         connect_req.write_u32::<BigEndian>(0).unwrap();
-        connect_req
-            .write_u32::<BigEndian>(transaction_id)
-            .unwrap();
+        connect_req.write_u32::<BigEndian>(transaction_id).unwrap();
 
         socket
             .send(&connect_req)
@@ -246,13 +233,11 @@ impl TrackerClient {
             .map_err(|e| TorrentError::Tracker(e.to_string()))?;
 
         let mut buf = vec![0u8; 8192];
-        let timeout = tokio::time::timeout(
-            std::time::Duration::from_secs(15),
-            socket.recv(&mut buf),
-        )
-        .await
-        .map_err(|_| TorrentError::Timeout)?
-        .map_err(|e| TorrentError::Tracker(e.to_string()))?;
+        let timeout =
+            tokio::time::timeout(std::time::Duration::from_secs(15), socket.recv(&mut buf))
+                .await
+                .map_err(|_| TorrentError::Timeout)?
+                .map_err(|e| TorrentError::Tracker(e.to_string()))?;
 
         let mut cursor = Cursor::new(&buf[..timeout]);
         let action = cursor
@@ -266,7 +251,9 @@ impl TrackerClient {
             return Err(TorrentError::Tracker("Connect action failed".to_string()));
         }
         if txn != transaction_id {
-            return Err(TorrentError::Tracker("Transaction ID mismatch on connect".to_string()));
+            return Err(TorrentError::Tracker(
+                "Transaction ID mismatch on connect".to_string(),
+            ));
         }
 
         let connection_id = cursor
@@ -275,9 +262,7 @@ impl TrackerClient {
 
         let transaction_id2: u32 = rand::random();
         let mut announce_req = Vec::with_capacity(98);
-        announce_req
-            .write_u64::<BigEndian>(connection_id)
-            .unwrap();
+        announce_req.write_u64::<BigEndian>(connection_id).unwrap();
         announce_req.write_u32::<BigEndian>(1).unwrap();
         announce_req
             .write_u32::<BigEndian>(transaction_id2)
@@ -305,13 +290,10 @@ impl TrackerClient {
             .await
             .map_err(|e| TorrentError::Tracker(e.to_string()))?;
 
-        let n = tokio::time::timeout(
-            std::time::Duration::from_secs(15),
-            socket.recv(&mut buf),
-        )
-        .await
-        .map_err(|_| TorrentError::Timeout)?
-        .map_err(|e| TorrentError::Tracker(e.to_string()))?;
+        let n = tokio::time::timeout(std::time::Duration::from_secs(15), socket.recv(&mut buf))
+            .await
+            .map_err(|_| TorrentError::Timeout)?
+            .map_err(|e| TorrentError::Tracker(e.to_string()))?;
 
         let mut cursor = Cursor::new(&buf[..n]);
         let action = cursor
@@ -322,12 +304,12 @@ impl TrackerClient {
             .map_err(|e| TorrentError::Tracker(e.to_string()))?;
 
         if action != 1 {
-            return Err(TorrentError::Tracker(
-                "Announce action failed".to_string(),
-            ));
+            return Err(TorrentError::Tracker("Announce action failed".to_string()));
         }
         if txn2 != transaction_id2 {
-            return Err(TorrentError::Tracker("Transaction ID mismatch on announce".to_string()));
+            return Err(TorrentError::Tracker(
+                "Transaction ID mismatch on announce".to_string(),
+            ));
         }
 
         let interval = cursor

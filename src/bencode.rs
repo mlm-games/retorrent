@@ -103,10 +103,8 @@ impl BencodeParser {
             .map_err(|e| TorrentError::BencodeParse(e.to_string()))?;
 
         if num_str == "-0"
-            || (num_str.len() > 1
-                && num_str.starts_with('0'))
-            || (num_str.len() > 2
-                && num_str.starts_with("-0"))
+            || (num_str.len() > 1 && num_str.starts_with('0'))
+            || (num_str.len() > 2 && num_str.starts_with("-0"))
         {
             return Err(TorrentError::BencodeParse(format!(
                 "Invalid integer format: {}",
@@ -177,7 +175,7 @@ impl BencodeParser {
                 _ => {
                     return Err(TorrentError::BencodeParse(
                         "Dict key must be string".to_string(),
-                    ))
+                    ));
                 }
             };
 
@@ -290,7 +288,10 @@ mod tests {
         // Build a minimal valid .torrent bencode
         let info_dict = BencodeValue::Dict({
             let mut m = std::collections::BTreeMap::new();
-            m.insert("name".into(), BencodeValue::ByteString(b"testfile".to_vec()));
+            m.insert(
+                "name".into(),
+                BencodeValue::ByteString(b"testfile".to_vec()),
+            );
             m.insert("piece length".into(), BencodeValue::Integer(16384));
             m.insert("length".into(), BencodeValue::Integer(16384));
             m.insert("pieces".into(), BencodeValue::ByteString(vec![0u8; 20]));
@@ -299,8 +300,14 @@ mod tests {
         let info_encoded = BencodeParser::encode(&info_dict);
         let root = BencodeValue::Dict({
             let mut m = std::collections::BTreeMap::new();
-            m.insert("announce".into(), BencodeValue::ByteString(b"http://tracker.test/announce".to_vec()));
-            m.insert("info".into(), BencodeValue::ByteString(info_encoded.clone()));
+            m.insert(
+                "announce".into(),
+                BencodeValue::ByteString(b"http://tracker.test/announce".to_vec()),
+            );
+            m.insert(
+                "info".into(),
+                BencodeValue::ByteString(info_encoded.clone()),
+            );
             m
         });
         let _data = BencodeParser::encode(&root);
@@ -309,7 +316,10 @@ mod tests {
         // Re-encode with proper structure
         let root2 = BencodeValue::Dict({
             let mut m = std::collections::BTreeMap::new();
-            m.insert("announce".into(), BencodeValue::ByteString(b"http://tracker.test/announce".to_vec()));
+            m.insert(
+                "announce".into(),
+                BencodeValue::ByteString(b"http://tracker.test/announce".to_vec()),
+            );
             m.insert("info".into(), info_dict);
             m
         });
@@ -335,7 +345,10 @@ mod tests {
         let info_encoded = BencodeParser::encode(&info_dict);
         let root = BencodeValue::Dict({
             let mut m = std::collections::BTreeMap::new();
-            m.insert("announce".into(), BencodeValue::ByteString(b"http://t.test/a".to_vec()));
+            m.insert(
+                "announce".into(),
+                BencodeValue::ByteString(b"http://t.test/a".to_vec()),
+            );
             m.insert("info".into(), info_dict);
             m
         });
@@ -356,7 +369,10 @@ mod metainfo_tests {
     fn make_test_torrent_bytes() -> Vec<u8> {
         let info_dict = BencodeValue::Dict({
             let mut m = BTreeMap::new();
-            m.insert("name".into(), BencodeValue::ByteString(b"testfile".to_vec()));
+            m.insert(
+                "name".into(),
+                BencodeValue::ByteString(b"testfile".to_vec()),
+            );
             m.insert("piece length".into(), BencodeValue::Integer(16384));
             m.insert("length".into(), BencodeValue::Integer(32768));
             m.insert("pieces".into(), BencodeValue::ByteString(vec![0u8; 40])); // 2 pieces
@@ -364,9 +380,18 @@ mod metainfo_tests {
         });
         let root = BencodeValue::Dict({
             let mut m = BTreeMap::new();
-            m.insert("announce".into(), BencodeValue::ByteString(b"http://tracker.test/announce".to_vec()));
-            m.insert("comment".into(), BencodeValue::ByteString(b"test comment".to_vec()));
-            m.insert("created by".into(), BencodeValue::ByteString(b"test".to_vec()));
+            m.insert(
+                "announce".into(),
+                BencodeValue::ByteString(b"http://tracker.test/announce".to_vec()),
+            );
+            m.insert(
+                "comment".into(),
+                BencodeValue::ByteString(b"test comment".to_vec()),
+            );
+            m.insert(
+                "created by".into(),
+                BencodeValue::ByteString(b"test".to_vec()),
+            );
             m.insert("creation date".into(), BencodeValue::Integer(1234567890));
             m.insert("info".into(), info_dict);
             m
@@ -384,7 +409,10 @@ mod metainfo_tests {
         assert_eq!(meta.pieces.len(), 2);
         assert_eq!(meta.piece_length, 16384);
         assert_eq!(meta.files.len(), 1);
-        assert_eq!(meta.announce.as_deref(), Some("http://tracker.test/announce"));
+        assert_eq!(
+            meta.announce.as_deref(),
+            Some("http://tracker.test/announce")
+        );
         assert_eq!(meta.comment.as_deref(), Some("test comment"));
 
         // Verify info hash

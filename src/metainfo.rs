@@ -1,4 +1,4 @@
-use crate::bencode::{extract_info_raw, BencodeParser, BencodeValue};
+use crate::bencode::{BencodeParser, BencodeValue, extract_info_raw};
 use crate::error::{Result, TorrentError};
 use crate::types::InfoHash;
 use sha1::{Digest, Sha1};
@@ -64,9 +64,7 @@ impl MetaInfo {
             .and_then(|v| v.as_string())
             .map(|s| s.to_string());
 
-        let creation_date = root_dict
-            .get("creation date")
-            .and_then(|v| v.as_integer());
+        let creation_date = root_dict.get("creation date").and_then(|v| v.as_integer());
 
         let info = root_dict
             .get("info")
@@ -149,10 +147,7 @@ impl MetaInfo {
         })
     }
 
-    fn parse_multi_file(
-        files_val: &BencodeValue,
-        base_name: &str,
-    ) -> Result<(Vec<FileInfo>, u64)> {
+    fn parse_multi_file(files_val: &BencodeValue, base_name: &str) -> Result<(Vec<FileInfo>, u64)> {
         let files_list = files_val
             .as_list()
             .ok_or_else(|| TorrentError::InvalidMetaInfo("files not a list".to_string()))?;
@@ -176,14 +171,15 @@ impl MetaInfo {
                 .and_then(|v| v.as_list())
                 .ok_or_else(|| TorrentError::InvalidMetaInfo("Missing file path".to_string()))?;
 
-            let path_parts: Vec<&str> = path_list
-                .iter()
-                .filter_map(|v| v.as_string())
-                .collect();
+            let path_parts: Vec<&str> = path_list.iter().filter_map(|v| v.as_string()).collect();
 
             let mut full_path = base_name.to_string();
             for part in &path_parts {
-                if part.contains("..") || part.contains('/') || part.contains('\\') || part.contains('\0') {
+                if part.contains("..")
+                    || part.contains('/')
+                    || part.contains('\\')
+                    || part.contains('\0')
+                {
                     return Err(TorrentError::InvalidMetaInfo(
                         "Invalid path component in torrent file".to_string(),
                     ));

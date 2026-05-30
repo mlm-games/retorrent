@@ -196,9 +196,10 @@ fn base32_decode(input: &str) -> Option<Vec<u8>> {
     let mut result = Vec::new();
     for chunk in bits.chunks(8) {
         if chunk.len() == 8 {
-            let byte = chunk.iter().enumerate().fold(0u8, |acc, (i, &b)| {
-                acc | (b << (7 - i))
-            });
+            let byte = chunk
+                .iter()
+                .enumerate()
+                .fold(0u8, |acc, (i, &b)| acc | (b << (7 - i)));
             result.push(byte);
         }
     }
@@ -302,37 +303,27 @@ pub struct ResumeData {
 
 impl ResumeData {
     pub fn save_to_dir(&self, dir: &std::path::Path) -> crate::error::Result<()> {
-        std::fs::create_dir_all(dir).map_err(|e| {
-            crate::error::TorrentError::ResumeData(format!("create dir: {}", e))
-        })?;
+        std::fs::create_dir_all(dir)
+            .map_err(|e| crate::error::TorrentError::ResumeData(format!("create dir: {}", e)))?;
         let path = dir.join(format!("{}.resume.json", self.info_hash));
-        let json = serde_json::to_string_pretty(self).map_err(|e| {
-            crate::error::TorrentError::ResumeData(format!("serialize: {}", e))
-        })?;
-        std::fs::write(&path, json).map_err(|e| {
-            crate::error::TorrentError::ResumeData(format!("write: {}", e))
-        })?;
+        let json = serde_json::to_string_pretty(self)
+            .map_err(|e| crate::error::TorrentError::ResumeData(format!("serialize: {}", e)))?;
+        std::fs::write(&path, json)
+            .map_err(|e| crate::error::TorrentError::ResumeData(format!("write: {}", e)))?;
         Ok(())
     }
 
-    pub fn load_from_dir(
-        info_hash_hex: &str,
-        dir: &std::path::Path,
-    ) -> Option<Self> {
+    pub fn load_from_dir(info_hash_hex: &str, dir: &std::path::Path) -> Option<Self> {
         let path = dir.join(format!("{}.resume.json", info_hash_hex));
         let json = std::fs::read_to_string(&path).ok()?;
         serde_json::from_str(&json).ok()
     }
 
-    pub fn remove_from_dir(
-        info_hash_hex: &str,
-        dir: &std::path::Path,
-    ) -> crate::error::Result<()> {
+    pub fn remove_from_dir(info_hash_hex: &str, dir: &std::path::Path) -> crate::error::Result<()> {
         let path = dir.join(format!("{}.resume.json", info_hash_hex));
         if path.exists() {
-            std::fs::remove_file(path).map_err(|e| {
-                crate::error::TorrentError::ResumeData(format!("remove: {}", e))
-            })?;
+            std::fs::remove_file(path)
+                .map_err(|e| crate::error::TorrentError::ResumeData(format!("remove: {}", e)))?;
         }
         Ok(())
     }
@@ -342,11 +333,7 @@ impl ResumeData {
         if let Ok(entries) = std::fs::read_dir(dir) {
             for entry in entries.flatten() {
                 let path = entry.path();
-                if path
-                    .extension()
-                    .map(|e| e == "json")
-                    .unwrap_or(false)
-                {
+                if path.extension().map(|e| e == "json").unwrap_or(false) {
                     if let Ok(json) = std::fs::read_to_string(&path) {
                         if let Ok(data) = serde_json::from_str::<ResumeData>(&json) {
                             results.push(data);

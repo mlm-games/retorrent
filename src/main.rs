@@ -17,7 +17,7 @@ use config::Config;
 use engine::TorrentEngine;
 use std::sync::mpsc;
 use std::sync::{Arc, Mutex};
-use tracing_subscriber::{fmt, EnvFilter};
+use tracing_subscriber::{EnvFilter, fmt};
 
 fn main() -> Result<()> {
     fmt()
@@ -54,7 +54,13 @@ fn main() -> Result<()> {
     let tray_cmd_rx = Arc::new(Mutex::new(tray_cmd_rx));
 
     repose_platform::run_desktop_app(move |sched, _rc| {
-        ui::app::app(sched, engine.clone(), rt.clone(), tray.clone(), tray_cmd_rx.clone())
+        ui::app::app(
+            sched,
+            engine.clone(),
+            rt.clone(),
+            tray.clone(),
+            tray_cmd_rx.clone(),
+        )
     })?;
 
     tracing::info!("Shutting down, saving resume data...");

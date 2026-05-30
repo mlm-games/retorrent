@@ -126,8 +126,7 @@ fn create_icon() -> Icon {
             let in_circle = dx * dx + dy * dy <= r * r;
 
             if in_circle {
-                let dist =
-                    ((dx as f32).powi(2) + (dy as f32).powi(2)).sqrt() / (r as f32);
+                let dist = ((dx as f32).powi(2) + (dy as f32).powi(2)).sqrt() / (r as f32);
 
                 let red = (200.0 * (1.0 - dist * 0.3)) as u8;
                 let green = (120.0 + 80.0 * (1.0 - dist)) as u8;
@@ -139,9 +138,7 @@ fn create_icon() -> Icon {
                 let t_w = 12i32;
                 let t_h = 12i32;
 
-                let hbar = (x as i32) >= t_x
-                    && (x as i32) < t_x + t_w
-                    && (y as i32) == t_y;
+                let hbar = (x as i32) >= t_x && (x as i32) < t_x + t_w && (y as i32) == t_y;
 
                 let vbar = (x as i32) >= (t_x + t_w / 2 - t_thickness / 2)
                     && (x as i32) < (t_x + t_w / 2 + t_thickness / 2)

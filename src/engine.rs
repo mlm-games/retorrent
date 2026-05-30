@@ -46,9 +46,7 @@ impl TorrentEngine {
             self.config.clone(),
         )?;
 
-        if let Some(rd) =
-            ResumeData::load_from_dir(&info_hash.to_hex(), &Config::resume_dir())
-        {
+        if let Some(rd) = ResumeData::load_from_dir(&info_hash.to_hex(), &Config::resume_dir()) {
             session.apply_resume(&rd);
             tracing::info!("Restored resume data for {}", info_hash);
         }
@@ -69,9 +67,7 @@ impl TorrentEngine {
             return Ok(info_hash);
         }
 
-        let name = magnet
-            .display_name
-            .unwrap_or_else(|| info_hash.to_hex());
+        let name = magnet.display_name.unwrap_or_else(|| info_hash.to_hex());
 
         let mut announce_list: Vec<Vec<String>> = Vec::new();
         if !magnet.trackers.is_empty() {
@@ -107,11 +103,7 @@ impl TorrentEngine {
         Ok(info_hash)
     }
 
-    pub fn start_torrent(
-        &self,
-        info_hash: &InfoHash,
-        rt: &tokio::runtime::Runtime,
-    ) {
+    pub fn start_torrent(&self, info_hash: &InfoHash, rt: &tokio::runtime::Runtime) {
         if let Some(session) = self.sessions.get(info_hash) {
             let session = session.value().clone();
             let max_peers = self.config.max_connections_per_torrent;
@@ -139,10 +131,7 @@ impl TorrentEngine {
             if delete_files {
                 let _ = session.storage.delete_files();
             }
-            let _ = ResumeData::remove_from_dir(
-                &info_hash.to_hex(),
-                &Config::resume_dir(),
-            );
+            let _ = ResumeData::remove_from_dir(&info_hash.to_hex(), &Config::resume_dir());
         }
     }
 
@@ -175,10 +164,7 @@ impl TorrentEngine {
                                 session.apply_resume(&rd);
                                 session.set_torrent_bytes(torrent_bytes.clone());
                                 self.sessions.insert(info_hash, session);
-                                tracing::info!(
-                                    "Resumed torrent: {}",
-                                    info_hash
-                                );
+                                tracing::info!("Resumed torrent: {}", info_hash);
                             }
                             Err(e) => {
                                 tracing::warn!(
@@ -190,11 +176,7 @@ impl TorrentEngine {
                         }
                     }
                     Err(e) => {
-                        tracing::warn!(
-                            "Failed to parse stored torrent {}: {}",
-                            rd.info_hash,
-                            e
-                        );
+                        tracing::warn!("Failed to parse stored torrent {}: {}", rd.info_hash, e);
                     }
                 }
             }
@@ -224,10 +206,7 @@ impl TorrentEngine {
         self.sessions.iter().map(|entry| *entry.key()).collect()
     }
 
-    pub fn get_session(
-        &self,
-        info_hash: &InfoHash,
-    ) -> Option<Arc<TorrentSession>> {
+    pub fn get_session(&self, info_hash: &InfoHash) -> Option<Arc<TorrentSession>> {
         self.sessions.get(info_hash).map(|s| s.value().clone())
     }
 }

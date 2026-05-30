@@ -10,11 +10,11 @@ use parking_lot::Mutex;
 use sha1::Digest;
 use std::collections::HashMap;
 use std::net::SocketAddrV4;
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 use tokio::net::{TcpListener, TcpStream};
-use tokio::sync::{mpsc, Semaphore};
+use tokio::sync::{Semaphore, mpsc};
 
 enum PeerEvent {
     AddPeers(Vec<SocketAddrV4>),

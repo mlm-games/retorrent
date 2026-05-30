@@ -2,8 +2,8 @@ use crate::error::{Result, TorrentError};
 use crate::types::*;
 use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
 use std::io::Cursor;
-use tokio::net::TcpStream;
 use std::net::{Ipv4Addr, SocketAddrV4};
+use tokio::net::TcpStream;
 
 #[derive(Debug)]
 pub enum PeerMessage {
@@ -55,14 +55,8 @@ impl PeerMessage {
         let flags = vec![0x01u8; added.len()];
 
         let mut dict = BTreeMap::new();
-        dict.insert(
-            "added".to_string(),
-            BencodeValue::ByteString(added_compact),
-        );
-        dict.insert(
-            "added.f".to_string(),
-            BencodeValue::ByteString(flags),
-        );
+        dict.insert("added".to_string(), BencodeValue::ByteString(added_compact));
+        dict.insert("added.f".to_string(), BencodeValue::ByteString(flags));
         dict.insert(
             "dropped".to_string(),
             BencodeValue::ByteString(dropped_compact),
@@ -191,7 +185,8 @@ impl PeerMessage {
             7 => {
                 if payload.len() < 8 {
                     return Err(TorrentError::Peer(format!(
-                        "Piece message too short: {} bytes", payload.len()
+                        "Piece message too short: {} bytes",
+                        payload.len()
                     )));
                 }
                 let index = cursor
@@ -230,7 +225,10 @@ impl PeerMessage {
             }
             20 => {
                 if payload.is_empty() {
-                    return Ok(PeerMessage::Extended { id: 0, payload: vec![] });
+                    return Ok(PeerMessage::Extended {
+                        id: 0,
+                        payload: vec![],
+                    });
                 }
                 let ext_id = payload[0];
                 Ok(PeerMessage::Extended {
@@ -296,13 +294,11 @@ impl PeerConnection {
         info_hash: &InfoHash,
         my_peer_id: &PeerId,
     ) -> Result<Self> {
-        let stream = tokio::time::timeout(
-            std::time::Duration::from_secs(10),
-            TcpStream::connect(addr),
-        )
-        .await
-        .map_err(|_| TorrentError::Timeout)?
-        .map_err(|e| TorrentError::Network(e.to_string()))?;
+        let stream =
+            tokio::time::timeout(std::time::Duration::from_secs(10), TcpStream::connect(addr))
+                .await
+                .map_err(|_| TorrentError::Timeout)?
+                .map_err(|e| TorrentError::Network(e.to_string()))?;
 
         let _ = stream.set_nodelay(true);
 
@@ -338,8 +334,8 @@ impl PeerConnection {
     }
 
     async fn handshake(&mut self, info_hash: &InfoHash, my_peer_id: &PeerId) -> Result<()> {
-        use tokio::io::AsyncWriteExt;
         use tokio::io::AsyncReadExt;
+        use tokio::io::AsyncWriteExt;
 
         let mut msg = Vec::with_capacity(68);
         msg.push(19);
@@ -376,9 +372,13 @@ impl PeerConnection {
         Ok(())
     }
 
-    async fn incoming_handshake(&mut self, info_hash: &InfoHash, my_peer_id: &PeerId) -> Result<()> {
-        use tokio::io::AsyncWriteExt;
+    async fn incoming_handshake(
+        &mut self,
+        info_hash: &InfoHash,
+        my_peer_id: &PeerId,
+    ) -> Result<()> {
         use tokio::io::AsyncReadExt;
+        use tokio::io::AsyncWriteExt;
 
         let mut resp = vec![0u8; 68];
         self.stream

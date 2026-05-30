@@ -84,10 +84,7 @@ impl DiskStorage {
             }
 
             let offset_in_file = abs_start.saturating_sub(file_start);
-            let writable = std::cmp::min(
-                remaining,
-                (file_info.length - offset_in_file) as usize,
-            );
+            let writable = std::cmp::min(remaining, (file_info.length - offset_in_file) as usize);
             if writable == 0 {
                 continue;
             }
@@ -117,18 +114,12 @@ impl DiskStorage {
 
         let data = self.read_piece_uncached(index, piece_size)?;
 
-        self.read_cache
-            .lock()
-            .put(index, data.clone());
+        self.read_cache.lock().put(index, data.clone());
 
         Ok(data)
     }
 
-    fn read_piece_uncached(
-        &self,
-        index: u32,
-        piece_size: u64,
-    ) -> Result<Vec<u8>> {
+    fn read_piece_uncached(&self, index: u32, piece_size: u64) -> Result<Vec<u8>> {
         let piece_offset = index as u64 * self.meta.piece_length;
         let mut result = vec![0u8; piece_size as usize];
         let mut data_offset = 0usize;
@@ -144,10 +135,7 @@ impl DiskStorage {
             }
 
             let offset_in_file = abs_start.saturating_sub(file_start);
-            let readable = std::cmp::min(
-                remaining,
-                (file_info.length - offset_in_file) as usize,
-            );
+            let readable = std::cmp::min(remaining, (file_info.length - offset_in_file) as usize);
             if readable == 0 {
                 continue;
             }
@@ -161,9 +149,7 @@ impl DiskStorage {
             } else {
                 let mut file = self.open_file_read(&file_info.path)?;
                 file.seek(SeekFrom::Start(offset_in_file))?;
-                file.read_exact(
-                    &mut result[data_offset..data_offset + readable],
-                )?;
+                file.read_exact(&mut result[data_offset..data_offset + readable])?;
             }
 
             data_offset += readable;
@@ -176,15 +162,9 @@ impl DiskStorage {
         Ok(result)
     }
 
-    fn mmap_read(
-        &self,
-        rel_path: &str,
-        offset: u64,
-        buf: &mut [u8],
-    ) -> Result<()> {
+    fn mmap_read(&self, rel_path: &str, offset: u64, buf: &mut [u8]) -> Result<()> {
         let full_path = self.base_path.join(rel_path);
-        let file = File::open(&full_path)
-            .map_err(|e| TorrentError::Storage(e.to_string()))?;
+        let file = File::open(&full_path).map_err(|e| TorrentError::Storage(e.to_string()))?;
 
         let mmap = unsafe {
             MmapOptions::new()
@@ -201,18 +181,20 @@ impl DiskStorage {
         for file_info in &self.meta.files {
             let full_path = self.base_path.join(&file_info.path);
             if full_path.exists() {
-                let canonical = full_path.canonicalize().map_err(|e| {
-                    TorrentError::Storage(format!("canonicalize: {}", e))
-                })?;
+                let canonical = full_path
+                    .canonicalize()
+                    .map_err(|e| TorrentError::Storage(format!("canonicalize: {}", e)))?;
                 if !canonical.starts_with(&self.base_path) {
                     tracing::warn!("Skipping file outside base path: {:?}", full_path);
                     continue;
                 }
-                fs::remove_file(&canonical)
-                    .map_err(|e| TorrentError::Storage(e.to_string()))?;
+                fs::remove_file(&canonical).map_err(|e| TorrentError::Storage(e.to_string()))?;
             }
         }
-        let canonical_base = self.base_path.canonicalize().unwrap_or(self.base_path.clone());
+        let canonical_base = self
+            .base_path
+            .canonicalize()
+            .unwrap_or(self.base_path.clone());
         let mut dirs: std::collections::HashSet<PathBuf> = std::collections::HashSet::new();
         for file_info in &self.meta.files {
             if let Some(parent) = self.base_path.join(&file_info.path).parent() {
