@@ -387,8 +387,7 @@ impl TorrentSession {
 
             if self.piece_manager.is_complete()
                 && !self.completed_sent.swap(true, Ordering::Relaxed)
-            {
-                if let Some(tracker_url) = trackers.first() {
+                && let Some(tracker_url) = trackers.first() {
                     let _ = client
                         .announce(
                             tracker_url,
@@ -402,7 +401,6 @@ impl TorrentSession {
                         )
                         .await;
                 }
-            }
 
             tokio::select! {
                 _ = tokio::time::sleep(Duration::from_secs(interval)) => {},
@@ -618,7 +616,7 @@ impl TorrentSession {
                     }
                 }
                 PeerMessage::Bitfield(bf) => {
-                    let expected = ((self.piece_manager.num_pieces + 7) / 8) as usize;
+                    let expected = self.piece_manager.num_pieces.div_ceil(8) as usize;
                     if bf.len() != expected {
                         continue;
                     }

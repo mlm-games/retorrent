@@ -111,11 +111,10 @@ impl TrackerClient {
 
         let decoded = BencodeParser::parse(&body)?;
 
-        if let Some(failure) = decoded.dict_get("failure reason") {
-            if let Some(msg) = failure.as_string() {
+        if let Some(failure) = decoded.dict_get("failure reason")
+            && let Some(msg) = failure.as_string() {
                 return Err(TorrentError::Tracker(msg.to_string()));
             }
-        }
 
         let interval = decoded
             .dict_get("interval")
@@ -323,7 +322,7 @@ impl TrackerClient {
             .map_err(|e| TorrentError::Tracker(e.to_string()))? as u64;
 
         let remaining = &buf[20..n];
-        if remaining.len() % 6 != 0 {
+        if !remaining.len().is_multiple_of(6) {
             return Err(TorrentError::Tracker(format!(
                 "UDP tracker response peer data length {} not a multiple of 6",
                 remaining.len()

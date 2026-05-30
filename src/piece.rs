@@ -16,7 +16,7 @@ pub struct PieceCollector {
 
 impl PieceCollector {
     pub fn new(index: u32, piece_size: u64, expected_hash: [u8; 20]) -> Self {
-        let num_blocks = ((piece_size + BLOCK_SIZE as u64 - 1) / BLOCK_SIZE as u64) as u32;
+        let num_blocks = piece_size.div_ceil(BLOCK_SIZE as u64) as u32;
         Self {
             index,
             piece_size,
@@ -285,7 +285,7 @@ impl PieceManager {
 
     pub fn have_bitfield(&self) -> Vec<u8> {
         let have = self.have.lock();
-        let byte_count = (self.num_pieces as usize + 7) / 8;
+        let byte_count = (self.num_pieces as usize).div_ceil(8);
         let mut bitfield = vec![0u8; byte_count];
         for (i, &has) in have.iter().enumerate() {
             if has {

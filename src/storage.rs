@@ -197,15 +197,12 @@ impl DiskStorage {
             .unwrap_or(self.base_path.clone());
         let mut dirs: std::collections::HashSet<PathBuf> = std::collections::HashSet::new();
         for file_info in &self.meta.files {
-            if let Some(parent) = self.base_path.join(&file_info.path).parent() {
-                if parent != canonical_base {
-                    if let Ok(canonical_parent) = parent.canonicalize() {
-                        if canonical_parent.starts_with(&canonical_base) {
+            if let Some(parent) = self.base_path.join(&file_info.path).parent()
+                && parent != canonical_base
+                    && let Ok(canonical_parent) = parent.canonicalize()
+                        && canonical_parent.starts_with(&canonical_base) {
                             dirs.insert(canonical_parent);
                         }
-                    }
-                }
-            }
         }
         let mut sorted: Vec<PathBuf> = dirs.into_iter().collect();
         sorted.sort_by(|a, b| b.components().count().cmp(&a.components().count()));

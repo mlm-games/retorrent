@@ -90,18 +90,15 @@ impl fmt::Display for TorrentState {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Default)]
 pub enum FilePriority {
     Skip,
     Low,
+    #[default]
     Normal,
     High,
 }
 
-impl Default for FilePriority {
-    fn default() -> Self {
-        FilePriority::Normal
-    }
-}
 
 impl fmt::Display for FilePriority {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -152,15 +149,13 @@ impl MagnetLink {
                             if let Some(h) = InfoHash::from_hex(hex_str) {
                                 info_hash = Some(h);
                             }
-                        } else if hex_str.len() == 32 {
-                            if let Some(bytes) = base32_decode(hex_str) {
-                                if bytes.len() == 20 {
+                        } else if hex_str.len() == 32
+                            && let Some(bytes) = base32_decode(hex_str)
+                                && bytes.len() == 20 {
                                     let mut hash = [0u8; 20];
                                     hash.copy_from_slice(&bytes);
                                     info_hash = Some(InfoHash(hash));
                                 }
-                            }
-                        }
                     }
                 }
                 "dn" => display_name = Some(decoded),
@@ -333,13 +328,11 @@ impl ResumeData {
         if let Ok(entries) = std::fs::read_dir(dir) {
             for entry in entries.flatten() {
                 let path = entry.path();
-                if path.extension().map(|e| e == "json").unwrap_or(false) {
-                    if let Ok(json) = std::fs::read_to_string(&path) {
-                        if let Ok(data) = serde_json::from_str::<ResumeData>(&json) {
+                if path.extension().map(|e| e == "json").unwrap_or(false)
+                    && let Ok(json) = std::fs::read_to_string(&path)
+                        && let Ok(data) = serde_json::from_str::<ResumeData>(&json) {
                             results.push(data);
                         }
-                    }
-                }
             }
         }
         results

@@ -47,7 +47,7 @@ pub fn piece_map_view(have: &[bool], available_width: f32) -> View {
     let spacing = 1.0;
     let step = piece_size + spacing;
     let columns = ((available_width / step) as usize).max(1);
-    let rows = (have.len() + columns - 1) / columns;
+    let rows = have.len().div_ceil(columns);
 
     let success_color = theme::success();
     let empty_color = Color::from_rgb(50, 50, 65);
