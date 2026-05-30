@@ -1,0 +1,45 @@
+[package]
+name = "retorrent"
+version = "0.1.0"
+edition = "2021"
+resolver = "2"
+
+[dependencies]
+tokio = { version = "1", features = ["full"] }
+futures = "0.3"
+async-trait = "0.1"
+reqwest = { version = "0.12", features = ["rustls-tls"] }
+tokio-util = { version = "0.7", features = ["codec"] }
+rfd = "0.14"
+
+repose-core = "0.16"
+repose-ui = "0.16"
+repose-material = "0.16"
+repose-platform = { version = "0.16", features = ["desktop"] }
+repose-text = "0.16"
+repose-devtools = "0.16"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha1 = "0.10"
+rand = "0.8"
+bytes = "1"
+bitvec = "1"
+byteorder = "1"
+parking_lot = "0.12"
+dashmap = "6"
+lru = "0.12"
+url = "2"
+memmap2 = "0.9"
+thiserror = "1"
+anyhow = "1"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+tray-icon = "0.19"
+gtk = "0.18"
+chrono = "0.4"
+dirs = "5"
+open = "5"
+percent-encoding = "2"
+urlencoding = "2"
+hex = "0.4"
+web-time = "1"
