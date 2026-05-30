@@ -1021,25 +1021,59 @@ fn info_section(title: &str, rows: Vec<(&str, String)>) -> View {
     )
 }
 
+fn file_progress_view(progress: f32, state: TorrentState) -> View {
+    let fill_color = match state {
+        TorrentState::Downloading => theme::downloading(),
+        TorrentState::Seeding => theme::seeding(),
+        TorrentState::Paused => theme::paused(),
+        TorrentState::Complete => theme::success(),
+        TorrentState::Error => theme::error(),
+        TorrentState::FetchingMetadata => theme::warning(),
+        _ => theme::accent(),
+    };
+    let th = theme();
+    let p = progress.clamp(0.0, 1.0);
+
+    Row(Modifier::new().fill_max_size().height(8.0)).child((
+        Box(Modifier::new()
+            .flex_grow(p)
+            .fill_max_height()
+            .background(fill_color)),
+        Box(Modifier::new()
+            .flex_grow(1.0 - p)
+            .fill_max_height()
+            .background(th.surface_container_highest)),
+    ))
+}
+
 fn files_tab_view(torrent: &TorrentRow, _info_hash: InfoHash, _engine: Arc<TorrentEngine>) -> View {
     let th = theme();
     let files = torrent.files.clone();
     let file_priorities = torrent.file_priorities.clone();
+    let state = torrent.stats.state;
 
     ScrollArea(
         Modifier::new().fill_max_width().min_height(200.0),
         remember_scroll_state("files_tab"),
         Column(Modifier::new().fill_max_width().padding(4.0)).child({
             let mut views: Vec<View> = Vec::new();
-            views.push(Row(Modifier::new().fill_max_width().padding(4.0)).child((
-                Text("File").size(12.0).color(th.on_surface),
-                Box(Modifier::new().width(12.0)),
-                Text("Size").size(12.0).color(th.on_surface),
-                Box(Modifier::new().width(12.0)),
-                Text("Progress").size(12.0).color(th.on_surface),
-                Box(Modifier::new().width(12.0)),
-                Text("Priority").size(12.0).color(th.on_surface),
-            )));
+
+            views.push(
+                Row(Modifier::new().fill_max_width().padding(4.0).column_gap(8.0)).child((
+                    Text("File").size(12.0).color(th.on_surface)
+                        .modifier(Modifier::new().flex_grow(1.0)),
+                    Text("Size").size(12.0).color(th.on_surface)
+                        .modifier(Modifier::new().width(80.0)),
+                    Text("Progress").size(12.0).color(th.on_surface)
+                        .modifier(Modifier::new().flex_grow(2.0)),
+                    Text("Priority").size(12.0).color(th.on_surface)
+                        .modifier(Modifier::new().width(70.0)),
+                )),
+            );
+
+            views.push(
+                Box(Modifier::new().fill_max_width().height(1.0).background(th.outline_variant)),
+            );
 
             for (fi, file) in files.iter().enumerate() {
                 let display_name = file.path.rsplit('/').next().unwrap_or(&file.path);
@@ -1047,22 +1081,17 @@ fn files_tab_view(torrent: &TorrentRow, _info_hash: InfoHash, _engine: Arc<Torre
                     .get(fi)
                     .copied()
                     .unwrap_or(FilePriority::Normal);
+                let progress = torrent.stats.progress.clamp(0.0, 1.0);
 
                 views.push(
-                    Row(Modifier::new().fill_max_width().padding(2.0)).child((
-                        Text(display_name).size(11.0).color(th.on_surface),
-                        Box(Modifier::new().width(8.0)),
-                        Text(format_bytes(file.length))
-                            .size(11.0)
-                            .color(th.on_surface_variant),
-                        Box(Modifier::new().width(8.0)),
-                        material3::LinearProgressIndicator(Some(
-                            torrent.stats.progress.clamp(0.0, 1.0),
-                        )),
-                        Box(Modifier::new().width(8.0)),
-                        Text(current_prio.to_string())
-                            .size(11.0)
-                            .color(th.on_surface_variant),
+                    Row(Modifier::new().fill_max_width().padding(2.0).column_gap(8.0)).child((
+                        Text(display_name).size(11.0).color(th.on_surface)
+                            .modifier(Modifier::new().flex_grow(1.0)),
+                        Text(format_bytes(file.length)).size(11.0).color(th.on_surface)
+                            .modifier(Modifier::new().width(80.0)),
+                        file_progress_view(progress, state),
+                        Text(current_prio.to_string()).size(11.0).color(th.on_surface)
+                            .modifier(Modifier::new().width(70.0)),
                     )),
                 );
             }
