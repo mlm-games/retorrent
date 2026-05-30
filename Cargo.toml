@@ -8,14 +8,14 @@ resolver = "2"
 tokio = { version = "1", features = ["full"] }
 futures = "0.3"
 async-trait = "0.1"
-reqwest = { version = "0.13.4" }
+reqwest = { version = "0.13.4", features = [
+    "rustls",
+], default-features = false }
 tokio-util = { version = "0.7", features = ["codec"] }
-rfd = "0.17"
 
 repose-core = "0.16"
 repose-ui = "0.16"
 repose-material = "0.16"
-repose-platform = { version = "0.16", features = ["desktop"] }
 repose-text = "0.16"
 repose-devtools = "0.16"
 serde = { version = "1", features = ["derive"] }
@@ -34,8 +34,6 @@ thiserror = "2"
 anyhow = "1"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
-tray-icon = "0.24"
-gtk = "0.18"
 chrono = "0.4"
 dirs = "6"
 open = "5"
@@ -43,3 +41,9 @@ percent-encoding = "2"
 urlencoding = "2"
 hex = "0.4"
 web-time = "1"
+
+[target.'cfg(any(target_os = "linux", target_os = "windows", target_os = "macos"))'.dependencies]
+gtk = "0.18"
+tray-icon = "0.24"
+rfd = "0.17"
+repose-platform = { version = "0.16", features = ["desktop"] }
