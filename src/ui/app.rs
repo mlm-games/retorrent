@@ -5,9 +5,11 @@ use std::sync::{Arc, Mutex};
 use repose_core::locals::set_theme_default;
 use repose_core::modifier::{PaddingValues, StateColors};
 use repose_core::prelude::*;
+use repose_material::material3::dialog::{Dialog, DialogState};
 use repose_material::material3::{
     self, FilledButton, FilledTonalButton, IconButton, TabRow, TextButton,
 };
+use repose_ui::overlay::OverlayHandle;
 use repose_ui::scroll::{ScrollArea, remember_scroll_state};
 use repose_ui::{textfield::TextField, *};
 
@@ -111,15 +113,16 @@ pub fn app(
     let active_tab: Rc<Signal<Tab>> = remember(|| signal(Tab::General));
     let filter_state: Rc<Signal<FilterState>> = remember(|| signal(FilterState::All));
     let search_query: Rc<Signal<String>> = remember(|| signal(String::new()));
-    let show_settings: Rc<Signal<bool>> = remember(|| signal(false));
-    let show_magnet_dialog: Rc<Signal<bool>> = remember(|| signal(false));
-    let show_remove_dialog: Rc<Signal<bool>> = remember(|| signal(false));
-    let remove_delete_files: Rc<Signal<bool>> = remember(|| signal(false));
     let magnet_input: Rc<Signal<String>> = remember(|| signal(String::new()));
     let torrents: Rc<Signal<Vec<TorrentRow>>> = remember(|| signal(Vec::new()));
     let global_dl: Rc<Signal<u64>> = remember(|| signal(0));
     let global_ul: Rc<Signal<u64>> = remember(|| signal(0));
     let last_refresh: Rc<Signal<web_time::Instant>> = remember(|| signal(web_time::Instant::now()));
+
+    let overlay = remember(|| OverlayHandle::new());
+    let magnet_state = remember(|| DialogState::new());
+    let remove_state = remember(|| DialogState::new());
+    let settings_state = remember(|| DialogState::new());
 
     // Process tray commands
     if let Ok(guard) = tray_cmd_rx.lock() {
@@ -237,9 +240,9 @@ pub fn app(
             rt.clone(),
             all_torrents.clone(),
             selected.clone(),
-            show_settings.clone(),
-            show_magnet_dialog.clone(),
-            show_remove_dialog.clone(),
+            magnet_state.clone(),
+            remove_state.clone(),
+            settings_state.clone(),
             global_dl.get(),
             global_ul.get(),
         ),
@@ -261,28 +264,36 @@ pub fn app(
         ),
     ));
 
-    // Dialogs rendered as overlays
-    Stack(Modifier::new().fill_max_size()).child((
-        Surface(
-            Modifier::new()
-                .fill_max_size()
-                .background(theme().background),
-            content,
-        ),
-        magnet_dialog_view(
-            show_magnet_dialog.clone(),
-            magnet_input.clone(),
-            engine.clone(),
-            rt.clone(),
-        ),
-        remove_dialog_view(
-            show_remove_dialog.clone(),
-            remove_delete_files.clone(),
-            selected.clone(),
-            engine.clone(),
-        ),
-        settings_dialog_view(show_settings.clone(), engine.clone()),
-    ))
+    // Wrap in overlay host so overlay entries (dialogs) are rendered
+    overlay.host(
+        Modifier::new().fill_max_size(),
+        Stack(Modifier::new().fill_max_size()).child((
+            Surface(
+                Modifier::new()
+                    .fill_max_size()
+                    .background(theme().background),
+                content,
+            ),
+            magnet_dialog_view(
+                magnet_state.clone(),
+                (*overlay).clone(),
+                magnet_input.clone(),
+                engine.clone(),
+                rt.clone(),
+            ),
+            remove_dialog_view(
+                remove_state.clone(),
+                (*overlay).clone(),
+                selected.clone(),
+                engine.clone(),
+            ),
+            settings_dialog_view(
+                settings_state.clone(),
+                (*overlay).clone(),
+                engine.clone(),
+            ),
+        )),
+    )
 }
 
 fn main_shell_view(
@@ -332,9 +343,9 @@ fn top_bar_view(
     rt: Arc<tokio::runtime::Runtime>,
     torrents: Vec<TorrentRow>,
     selected: Rc<Signal<Option<InfoHash>>>,
-    show_settings: Rc<Signal<bool>>,
-    show_magnet_dialog: Rc<Signal<bool>>,
-    show_remove_dialog: Rc<Signal<bool>>,
+    magnet_state: Rc<DialogState>,
+    remove_state: Rc<DialogState>,
+    settings_state: Rc<DialogState>,
     global_dl: u64,
     global_ul: u64,
 ) -> View {
@@ -429,8 +440,8 @@ fn top_bar_view(
         children.push(FilledTonalButton(
             Modifier::new().height(40.0),
             {
-                let s = show_magnet_dialog.clone();
-                move || s.set(true)
+                let s = magnet_state.clone();
+                move || s.show()
             },
             || {
                 Row(Modifier::new().align_items(AlignItems::Center)).child((
@@ -473,10 +484,10 @@ fn top_bar_view(
 
         children.push(IconButton(icon(Symbols::DELETE, 20.0, th.error), {
             let selected = selected.clone();
-            let s = show_remove_dialog.clone();
+            let s = remove_state.clone();
             move || {
                 if selected.get().is_some() {
-                    s.set(true);
+                    s.show();
                 }
             }
         }));
@@ -486,8 +497,8 @@ fn top_bar_view(
         children.push(IconButton(
             icon(Symbols::SETTINGS, 20.0, th.on_surface_variant),
             {
-                let s = show_settings.clone();
-                move || s.set(true)
+                let s = settings_state.clone();
+                move || s.show()
             },
         ));
 
@@ -1209,122 +1220,96 @@ fn status_bar_view(
 }
 
 fn magnet_dialog_view(
-    show_magnet_dialog: Rc<Signal<bool>>,
+    state: Rc<DialogState>,
+    overlay: OverlayHandle,
     magnet_input: Rc<Signal<String>>,
     engine: Arc<TorrentEngine>,
     rt: Arc<tokio::runtime::Runtime>,
 ) -> View {
     let th = theme();
-    if !show_magnet_dialog.get() {
-        return Box(Modifier::new());
-    }
 
-    Stack(Modifier::new().fill_max_size()).child((
-        Box(Modifier::new()
-            .fill_max_size()
-            .background(th.scrim.with_alpha(170))
-            .clickable()
-            .on_pointer_down({
-                let s = show_magnet_dialog.clone();
-                move |_| s.set(false)
-            })),
-        Surface(
-            Modifier::new()
-                .width(500.0)
-                .background(th.surface_container_high)
-                .clip_rounded(12.0)
-                .padding(24.0),
-            Column(Modifier::new()).child((
-                Text("Add Magnet Link").size(18.0).color(th.on_surface),
-                Box(Modifier::new().height(12.0)),
-                TextField(
-                    "magnet:?xt=urn:btih:...",
-                    Modifier::new().fill_max_width().height(60.0),
-                    Some({
+    Dialog(
+        state.clone(),
+        overlay,
+        Modifier::new(),
+        Column(Modifier::new().padding(24.0).min_width(400.0)).child((
+            Text("Add Magnet Link").size(18.0).color(th.on_surface),
+            Box(Modifier::new().height(12.0)),
+            TextField(
+                "magnet:?xt=urn:btih:...",
+                Modifier::new().fill_max_width().height(60.0),
+                Some({
+                    let m = magnet_input.clone();
+                    move |v| m.set(v)
+                }),
+                None::<fn(String)>,
+            ),
+            Box(Modifier::new().height(16.0)),
+            Row(Modifier::new()
+                .align_items(AlignItems::Center)
+                .justify_content(JustifyContent::End))
+            .child((
+                TextButton(
+                    Modifier::new(),
+                    {
+                        let s = state.clone();
                         let m = magnet_input.clone();
-                        move |v| m.set(v)
-                    }),
-                    None::<fn(String)>,
+                        move || {
+                            m.set(String::new());
+                            s.dismiss();
+                        }
+                    },
+                    || Text("Cancel"),
                 ),
-                Box(Modifier::new().height(16.0)),
-                Row(Modifier::new()
-                    .align_items(AlignItems::Center)
-                    .justify_content(JustifyContent::End))
-                .child((
-                    TextButton(
-                        Modifier::new(),
-                        {
-                            let s = show_magnet_dialog.clone();
-                            let m = magnet_input.clone();
-                            move || {
-                                m.set(String::new());
-                                s.set(false);
-                            }
-                        },
-                        || Text("Cancel"),
-                    ),
-                    Box(Modifier::new().width(8.0)),
-                    FilledButton(
-                        Modifier::new(),
-                        {
-                            let s = show_magnet_dialog.clone();
-                            let m = magnet_input.clone();
-                            move || {
-                                let uri = m.get().trim().to_string();
-                                if !uri.is_empty() {
-                                    match engine.add_torrent_from_magnet(&uri) {
-                                        Ok(hash) => {
-                                            engine.start_torrent(&hash, &rt);
-                                            tracing::info!("Added magnet: {}", hash);
-                                        }
-                                        Err(e) => tracing::error!("Failed to add magnet: {}", e),
+                Box(Modifier::new().width(8.0)),
+                FilledButton(
+                    Modifier::new(),
+                    {
+                        let s = state.clone();
+                        let m = magnet_input.clone();
+                        move || {
+                            let uri = m.get().trim().to_string();
+                            if !uri.is_empty() {
+                                match engine.add_torrent_from_magnet(&uri) {
+                                    Ok(hash) => {
+                                        engine.start_torrent(&hash, &rt);
+                                        tracing::info!("Added magnet: {}", hash);
                                     }
+                                    Err(e) => tracing::error!("Failed to add magnet: {}", e),
                                 }
-                                m.set(String::new());
-                                s.set(false);
                             }
-                        },
-                        || Text("Add"),
-                    ),
-                )),
+                            m.set(String::new());
+                            s.dismiss();
+                        }
+                    },
+                    || Text("Add"),
+                ),
             )),
-        ),
-    ))
+        )),
+    )
 }
 
 fn remove_dialog_view(
-    show_remove_dialog: Rc<Signal<bool>>,
-    remove_delete_files: Rc<Signal<bool>>,
+    state: Rc<DialogState>,
+    overlay: OverlayHandle,
     selected: Rc<Signal<Option<InfoHash>>>,
     engine: Arc<TorrentEngine>,
 ) -> View {
     let th = theme();
-    if !show_remove_dialog.get() {
-        return Box(Modifier::new());
-    }
+    let remove_delete_files = remember(|| signal(false));
 
-    Stack(Modifier::new().fill_max_size()).child((
-        Box(Modifier::new()
-            .fill_max_size()
-            .background(th.scrim.with_alpha(170))
-            .clickable()
-            .on_pointer_down({
-                let s = show_remove_dialog.clone();
-                move |_| s.set(false)
-            })),
-        Surface(
-            Modifier::new()
-                .width(400.0)
-                .background(th.surface_container_high)
-                .clip_rounded(12.0)
-                .padding(24.0),
-            Column(Modifier::new()).child((
-                Text("Remove Torrent").size(18.0).color(th.on_surface),
-                Box(Modifier::new().height(12.0)),
-                Text("Are you sure you want to remove this torrent?")
-                    .size(14.0)
-                    .color(th.on_surface_variant),
-                Box(Modifier::new().height(12.0)),
+    Dialog(
+        state.clone(),
+        overlay,
+        Modifier::new(),
+        Column(Modifier::new().padding(24.0).min_width(360.0)).child((
+            Text("Remove Torrent").size(18.0).color(th.on_surface),
+            Box(Modifier::new().height(12.0)),
+            Text("Are you sure you want to remove this torrent?")
+                .size(14.0)
+                .color(th.on_surface_variant),
+            Box(Modifier::new().height(12.0)),
+            Row(Modifier::new().align_items(AlignItems::Center)).child((
                 Checkbox(remove_delete_files.get(), {
                     let d = remove_delete_files.clone();
                     move |v| d.set(v)
@@ -1332,176 +1317,186 @@ fn remove_dialog_view(
                 Text("  Also delete downloaded files")
                     .size(13.0)
                     .color(th.on_surface),
-                Box(Modifier::new().height(16.0)),
-                Row(Modifier::new()
-                    .align_items(AlignItems::Center)
-                    .justify_content(JustifyContent::End))
-                .child((
-                    TextButton(
-                        Modifier::new(),
-                        {
-                            let s = show_remove_dialog.clone();
-                            let d = remove_delete_files.clone();
-                            move || {
-                                d.set(false);
-                                s.set(false);
-                            }
-                        },
-                        || Text("Cancel"),
-                    ),
-                    Box(Modifier::new().width(8.0)),
-                    FilledButton(
-                        Modifier::new(),
-                        {
-                            let s = show_remove_dialog.clone();
-                            let d = remove_delete_files.clone();
-                            let sel = selected.clone();
-                            let e = engine.clone();
-                            move || {
-                                if let Some(hash) = sel.get() {
-                                    e.remove_torrent(&hash, d.get());
-                                    sel.set(None);
-                                }
-                                d.set(false);
-                                s.set(false);
-                            }
-                        },
-                        || Text("Remove"),
-                    ),
-                )),
             )),
-        ),
-    ))
+            Box(Modifier::new().height(16.0)),
+            Row(Modifier::new()
+                .align_items(AlignItems::Center)
+                .justify_content(JustifyContent::End))
+            .child((
+                TextButton(
+                    Modifier::new(),
+                    {
+                        let s = state.clone();
+                        let d = remove_delete_files.clone();
+                        move || {
+                            d.set(false);
+                            s.dismiss();
+                        }
+                    },
+                    || Text("Cancel"),
+                ),
+                Box(Modifier::new().width(8.0)),
+                FilledButton(
+                    Modifier::new(),
+                    {
+                        let s = state.clone();
+                        let d = remove_delete_files.clone();
+                        let sel = selected.clone();
+                        let e = engine.clone();
+                        move || {
+                            if let Some(hash) = sel.get() {
+                                e.remove_torrent(&hash, d.get());
+                                sel.set(None);
+                            }
+                            d.set(false);
+                            s.dismiss();
+                        }
+                    },
+                    || Text("Remove"),
+                ),
+            )),
+        )),
+    )
 }
 
-fn settings_dialog_view(show_settings: Rc<Signal<bool>>, engine: Arc<TorrentEngine>) -> View {
+fn settings_dialog_view(
+    state: Rc<DialogState>,
+    overlay: OverlayHandle,
+    engine: Arc<TorrentEngine>,
+) -> View {
     let th = theme();
-    if !show_settings.get() {
-        return Box(Modifier::new());
+    let config: Rc<Signal<Config>> = remember_with_key(state.key("cfg"), || signal((*engine.config).clone()));
+    let last_visible = remember_with_key(state.key("lv"), || signal(false));
+    let vis = state.is_visible();
+    if vis && !last_visible.get() {
+        config.set((*engine.config).clone());
+        last_visible.set(true);
+    } else if !vis {
+        last_visible.set(false);
     }
+    let cfg = config.get();
 
-    let config: Rc<Signal<Config>> = remember(|| signal((*engine.config).clone()));
-    let config2 = config.clone();
+    Dialog(
+        state.clone(),
+        overlay,
+        Modifier::new().max_width(540.0),
+        Column(Modifier::new().padding(24.0)).child((
+            Text("\u{2699} Settings").size(18.0).color(th.on_surface),
+            Box(Modifier::new().height(12.0)),
+            ScrollArea(
+                Modifier::new().fill_max_width().max_height(400.0),
+                remember_scroll_state("settings_scroll"),
+                Column(Modifier::new().fill_max_width()).child({
+                    let mut views: Vec<View> = Vec::new();
 
-    Stack(Modifier::new().fill_max_size()).child((
-        Box(Modifier::new()
-            .fill_max_size()
-            .background(th.scrim.with_alpha(170))
-            .clickable()
-            .on_pointer_down({
-                let s = show_settings.clone();
-                move |_| s.set(false)
-            })),
-        Surface(
-            Modifier::new()
-                .width(500.0)
-                .max_height(600.0)
-                .background(th.surface_container_high)
-                .clip_rounded(12.0)
-                .padding(24.0),
-            Column(Modifier::new()).child((
-                Text("\u{2699} Settings").size(18.0).color(th.on_surface),
-                Box(Modifier::new().height(12.0)),
-                ScrollArea(
-                    Modifier::new().fill_max_width().max_height(400.0),
-                    remember_scroll_state("settings_scroll"),
-                    Column(Modifier::new().fill_max_width()).child({
-                        let cfg = config.get();
-                        let mut views: Vec<View> = Vec::new();
-
-                        views.push(Text("Network").size(16.0).color(th.on_surface));
-                        views.push(Box(Modifier::new().height(8.0)));
-
-                        let settings_fields: Vec<(&str, u32, u32, u32)> = vec![
-                            ("Listen Port:", cfg.listen_port as u32, 1024, 65535),
-                            ("Max Connections:", cfg.max_connections as u32, 1, 2000),
-                            (
-                                "Max Per Torrent:",
-                                cfg.max_connections_per_torrent as u32,
-                                1,
-                                500,
-                            ),
-                            ("Pipeline Depth:", cfg.pipeline_depth as u32, 1, 128),
-                            ("Upload Slots:", cfg.upload_slots as u32, 1, 20),
-                            (
-                                "Max DL Rate (0=\u{221E}):",
-                                cfg.max_download_rate as u32,
-                                0,
-                                1000000,
-                            ),
-                            (
-                                "Max UL Rate (0=\u{221E}):",
-                                cfg.max_upload_rate as u32,
-                                0,
-                                1000000,
-                            ),
-                        ];
-
-                        for (label, val, _min, _max) in settings_fields {
-                            views.push(
-                                Row(Modifier::new().fill_max_width().padding(2.0)).child((
-                                    Text(label)
-                                        .size(12.0)
-                                        .color(th.on_surface_variant)
-                                        .modifier(Modifier::new().width(180.0)),
-                                    Text(val.to_string()).size(12.0).color(th.on_surface),
-                                )),
-                            );
-                        }
-
-                        views.push(Box(Modifier::new().height(12.0)));
-                        views.push(Text("Downloads").size(16.0).color(th.on_surface));
-                        views.push(Box(Modifier::new().height(8.0)));
+                    // Network section
+                    views.push(Text("Network").size(16.0).color(th.on_surface));
+                    views.push(Box(Modifier::new().height(8.0)));
+                    let settings_fields: Vec<(&str, u32)> = vec![
+                        ("Listen Port:", cfg.listen_port as u32),
+                        ("Max Connections:", cfg.max_connections as u32),
+                        ("Max Per Torrent:", cfg.max_connections_per_torrent as u32),
+                        ("Pipeline Depth:", cfg.pipeline_depth as u32),
+                        ("Upload Slots:", cfg.upload_slots as u32),
+                        ("Max DL Rate (0=\u{221E}):", cfg.max_download_rate as u32),
+                        ("Max UL Rate (0=\u{221E}):", cfg.max_upload_rate as u32),
+                    ];
+                    for (label, val) in settings_fields {
                         views.push(
-                            Row(Modifier::new().fill_max_width()).child((
-                                Text("Directory:").size(12.0).color(th.on_surface_variant),
-                                Text(cfg.download_dir.to_string_lossy())
+                            Row(Modifier::new().fill_max_width().padding(2.0)).child((
+                                Text(label)
                                     .size(12.0)
-                                    .color(th.on_surface),
+                                    .color(th.on_surface_variant)
+                                    .modifier(Modifier::new().width(180.0)),
+                                Text(val.to_string()).size(12.0).color(th.on_surface),
                             )),
                         );
-                        views.push(Box(Modifier::new().height(12.0)));
-                        views.push(Text("Seeding").size(16.0).color(th.on_surface));
-                        views.push(Box(Modifier::new().height(8.0)));
-                        views.push(Text("Features").size(16.0).color(th.on_surface));
-                        views.push(Box(Modifier::new().height(8.0)));
+                    }
 
-                        views
-                    }),
+                    // Downloads
+                    views.push(Box(Modifier::new().height(12.0)));
+                    views.push(Text("Downloads").size(16.0).color(th.on_surface));
+                    views.push(Box(Modifier::new().height(8.0)));
+                    views.push(
+                        Row(Modifier::new().fill_max_width()).child((
+                            Text("Directory:").size(12.0).color(th.on_surface_variant),
+                            Text(cfg.download_dir.to_string_lossy())
+                                .size(12.0)
+                                .color(th.on_surface),
+                        )),
+                    );
+
+                    // Features
+                    views.push(Box(Modifier::new().height(12.0)));
+                    views.push(Text("Features").size(16.0).color(th.on_surface));
+                    views.push(Box(Modifier::new().height(8.0)));
+
+                    let feature_switches: Vec<(&str, bool, Rc<dyn Fn(bool)>)> = vec![
+                        ("DHT", cfg.dht_enabled, {
+                            let c = config.clone();
+                            Rc::new(move |v| { let mut nc = c.get(); nc.dht_enabled = v; c.set(nc); })
+                        }),
+                        ("PEX", cfg.pex_enabled, {
+                            let c = config.clone();
+                            Rc::new(move |v| { let mut nc = c.get(); nc.pex_enabled = v; c.set(nc); })
+                        }),
+                        ("Encryption", cfg.enable_encryption, {
+                            let c = config.clone();
+                            Rc::new(move |v| { let mut nc = c.get(); nc.enable_encryption = v; c.set(nc); })
+                        }),
+                        ("Auto Resume", cfg.auto_resume, {
+                            let c = config.clone();
+                            Rc::new(move |v| { let mut nc = c.get(); nc.auto_resume = v; c.set(nc); })
+                        }),
+                    ];
+                    for (label, val, on_toggle) in feature_switches {
+                        views.push(
+                            Row(Modifier::new().fill_max_width().align_items(AlignItems::Center)).child((
+                                Text(label).size(12.0).color(th.on_surface_variant)
+                                    .modifier(Modifier::new().flex_grow(1.0)),
+                                Switch(val, move |v| (on_toggle)(v)),
+                            )),
+                        );
+                    }
+
+                    views
+                }),
+            ),
+            Box(Modifier::new().height(16.0)),
+            Row(Modifier::new()
+                .align_items(AlignItems::Center)
+                .justify_content(JustifyContent::End))
+            .child((
+                TextButton(
+                    Modifier::new(),
+                    {
+                        let s = state.clone();
+                        let c = config.clone();
+                        let e = engine.clone();
+                        move || {
+                            c.set((*e.config).clone());
+                            s.dismiss();
+                        }
+                    },
+                    || Text("Cancel"),
                 ),
-                Box(Modifier::new().height(16.0)),
-                Row(Modifier::new()
-                    .align_items(AlignItems::Center)
-                    .justify_content(JustifyContent::End))
-                .child((
-                    TextButton(
-                        Modifier::new(),
-                        {
-                            let s = show_settings.clone();
-                            move || {
-                                s.set(false);
-                            }
-                        },
-                        || Text("Cancel"),
-                    ),
-                    Box(Modifier::new().width(8.0)),
-                    FilledButton(
-                        Modifier::new(),
-                        {
-                            let s = show_settings.clone();
-                            let e = engine.clone();
-                            let c = config2.clone();
-                            move || {
-                                let cfg = c.get();
-                                let _ = cfg.save();
-                                e.apply_config(&cfg);
-                                s.set(false);
-                            }
-                        },
-                        || Text("Save"),
-                    ),
-                )),
+                Box(Modifier::new().width(8.0)),
+                FilledButton(
+                    Modifier::new(),
+                    {
+                        let s = state.clone();
+                        let e = engine.clone();
+                        let c = config.clone();
+                        move || {
+                            let cfg = c.get();
+                            let _ = cfg.save();
+                            e.apply_config(&cfg);
+                            s.dismiss();
+                        }
+                    },
+                    || Text("Save"),
+                ),
             )),
-        ),
-    ))
+        )),
+    )
 }
