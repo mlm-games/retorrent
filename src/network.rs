@@ -1,4 +1,5 @@
 use crate::config::Config;
+use crate::dht::DhtNode;
 use crate::error::Result;
 use crate::metainfo::MetaInfo;
 use crate::peer::{PeerConnection, PeerMessage};
@@ -6,10 +7,11 @@ use crate::piece::PieceManager;
 use crate::storage::DiskStorage;
 use crate::tracker::TrackerClient;
 use crate::types::*;
+use futures::StreamExt;
 use parking_lot::Mutex;
 use sha1::Digest;
 use std::collections::HashMap;
-use std::net::SocketAddrV4;
+use std::net::{SocketAddr, SocketAddrV4};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::time::{Duration, Instant};
@@ -63,6 +65,7 @@ pub struct TorrentSession {
     config: Arc<Config>,
     torrent_bytes: Arc<Mutex<Option<Vec<u8>>>>,
     pub peer_choke_stats: Arc<Mutex<HashMap<SocketAddrV4, PeerStats>>>,
+    dht: parking_lot::Mutex<Option<Arc<DhtNode>>>,
 }
 
 impl TorrentSession {
@@ -122,6 +125,7 @@ impl TorrentSession {
             config,
             torrent_bytes: Arc::new(Mutex::new(None)),
             peer_choke_stats: Arc::new(Mutex::new(HashMap::new())),
+            dht: parking_lot::Mutex::new(None),
         }))
     }
 
@@ -173,11 +177,15 @@ impl TorrentSession {
         self.file_priorities.lock().clone()
     }
 
-    pub async fn start(self: Arc<Self>, max_peers: usize) {
+    pub async fn start(self: Arc<Self>, max_peers: usize, dht: Option<Arc<DhtNode>>) {
         if self.started.swap(true, Ordering::Relaxed) {
             tracing::warn!("start() called twice for {}", self.info_hash);
             return;
         }
+
+        // Store DHT reference for Port message handling
+        *self.dht.lock() = dht.clone();
+
         let (peer_tx, mut peer_rx) = mpsc::channel::<PeerEvent>(100);
 
         let tracker_session = self.clone();
@@ -185,6 +193,17 @@ impl TorrentSession {
         tokio::spawn(async move {
             tracker_session.tracker_loop(peer_tx2).await;
         });
+
+        if let Some(ref dht_node) = dht {
+            let dht_session = self.clone();
+            let dht_peer_tx = peer_tx.clone();
+            let dht = dht_node.clone();
+            let info_hash = self.info_hash;
+            let port = self.config.listen_port;
+            tokio::spawn(async move {
+                dht_session.dht_loop(dht, info_hash, port, dht_peer_tx).await;
+            });
+        }
 
         if self.config.accept_incoming {
             let listener_session = self.clone();
@@ -273,6 +292,21 @@ impl TorrentSession {
         tokio::spawn(async move {
             choke_session.choke_loop().await;
         });
+    }
+
+    async fn dht_loop(self: Arc<Self>, dht: Arc<DhtNode>, info_hash: InfoHash, port: u16, peer_tx: mpsc::Sender<PeerEvent>) {
+        let mut peers = dht.get_peers(info_hash, Some(port));
+        loop {
+            tokio::select! {
+                Some(peer) = peers.next() => {
+                    if let SocketAddr::V4(v4) = peer {
+                        if self.cancel_token.is_cancelled() { break; }
+                        let _ = peer_tx.send(PeerEvent::AddPeers(vec![v4])).await;
+                    }
+                }
+                _ = self.cancel_token.cancelled() => break,
+            }
+        }
     }
 
     async fn incoming_listener(&self, peer_tx: mpsc::Sender<PeerEvent>) {
@@ -749,6 +783,24 @@ impl TorrentSession {
                     }
                 }
                 PeerMessage::Cancel { .. } => {}
+                PeerMessage::Port(dht_port) => {
+                    if let Some(ref dht) = *self.dht.lock() {
+                        let dht_addr = SocketAddr::V4(SocketAddrV4::new(*addr.ip(), dht_port));
+                        let mut table = if dht_addr.is_ipv4() {
+                            dht.routing_table_v4.write()
+                        } else {
+                            dht.routing_table_v6.write()
+                        };
+                        // Derive a node ID from IP:port (we don't know the node's ID)
+                        // Use SHA-1 of the address as a fake node ID for now
+                        let mut hasher = sha1::Sha1::new();
+                        sha1::Digest::update(&mut hasher, dht_addr.to_string().as_bytes());
+                        let hash = hasher.finalize();
+                        let mut id = [0u8; 20];
+                        id.copy_from_slice(&hash);
+                        table.add_node(InfoHash(id), dht_addr);
+                    }
+                }
                 _ => {}
             }
         }

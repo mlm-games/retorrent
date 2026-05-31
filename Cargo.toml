@@ -13,11 +13,11 @@ reqwest = { version = "0.13.4", features = [
 ], default-features = false }
 tokio-util = { version = "0.7", features = ["codec"] }
 
-repose-core = "0.16"
-repose-ui = "0.16"
-repose-material = "0.16"
-repose-text = "0.16"
-repose-devtools = "0.16"
+repose-core = { path = "../repose/crates/repose-core" }
+repose-ui = { path = "../repose/crates/repose-ui" }
+repose-material = { path = "../repose/crates/repose-material" }
+repose-text = { path = "../repose/crates/repose-text" }
+repose-devtools = { path = "../repose/crates/repose-devtools" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 sha1 = "0.11"
@@ -34,7 +34,7 @@ thiserror = "2"
 anyhow = "1"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
-chrono = "0.4"
+chrono = { version = "0.4", features = ["serde"] }
 dirs = "6"
 open = "5"
 percent-encoding = "2"
@@ -46,4 +46,4 @@ web-time = "1"
 gtk = "0.18"
 tray-icon = "0.24"
 rfd = "0.17"
-repose-platform = { version = "0.16", features = ["desktop"] }
+repose-platform = { path = "../repose/crates/repose-platform", features = ["desktop"] }

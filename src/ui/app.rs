@@ -7,7 +7,7 @@ use repose_core::modifier::{PaddingValues, StateColors};
 use repose_core::prelude::*;
 use repose_material::material3::dialog::{Dialog, DialogState};
 use repose_material::material3::{
-    self, FilledButton, FilledTonalButton, IconButton, TabRow, TextButton,
+    self, Checkbox, FilledButton, FilledTonalButton, IconButton, Switch, TabRow, TextButton,
 };
 use repose_ui::overlay::OverlayHandle;
 use repose_ui::scroll::{ScrollArea, remember_scroll_state};

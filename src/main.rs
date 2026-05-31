@@ -1,5 +1,6 @@
 mod bencode;
 mod config;
+mod dht;
 mod engine;
 mod error;
 mod metainfo;

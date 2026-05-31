@@ -342,6 +342,7 @@ impl PeerConnection {
         msg.extend_from_slice(b"BitTorrent protocol");
         let mut reserved = [0u8; 8];
         reserved[5] = 0x10; // advertise extension protocol (BEP-10)
+        reserved[7] = 0x01; // advertise DHT protocol (BEP-5)
         msg.extend_from_slice(&reserved);
         msg.extend_from_slice(info_hash.as_bytes());
         msg.extend_from_slice(&my_peer_id.0);

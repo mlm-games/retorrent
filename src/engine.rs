@@ -1,4 +1,5 @@
 use crate::config::Config;
+use crate::dht::DhtNode;
 use crate::error::Result;
 use crate::metainfo::MetaInfo;
 use crate::network::TorrentSession;
@@ -11,6 +12,7 @@ pub struct TorrentEngine {
     pub config: Arc<Config>,
     pub peer_id: PeerId,
     pub sessions: Arc<DashMap<InfoHash, Arc<TorrentSession>>>,
+    pub dht: Option<Arc<DhtNode>>,
 }
 
 impl TorrentEngine {
@@ -18,10 +20,27 @@ impl TorrentEngine {
         std::fs::create_dir_all(&config.download_dir).ok();
         std::fs::create_dir_all(Config::resume_dir()).ok();
 
+        let dht = if config.dht_enabled {
+            match crate::dht::DhtBuilder::new().await {
+                Ok(node) => {
+                    tracing::info!("DHT started on {}", node.listen_addr());
+                    Some(node)
+                }
+                Err(e) => {
+                    tracing::warn!("DHT failed to start: {}", e);
+                    None
+                }
+            }
+        } else {
+            tracing::info!("DHT disabled");
+            None
+        };
+
         let engine = Self {
             config: Arc::new(config),
             peer_id: PeerId::generate(),
             sessions: Arc::new(DashMap::new()),
+            dht,
         };
 
         if engine.config.auto_resume {
@@ -107,8 +126,9 @@ impl TorrentEngine {
         if let Some(session) = self.sessions.get(info_hash) {
             let session = session.value().clone();
             let max_peers = self.config.max_connections_per_torrent;
+            let dht = self.dht.clone();
             rt.spawn(async move {
-                session.start(max_peers).await;
+                session.start(max_peers, dht).await;
             });
         }
     }

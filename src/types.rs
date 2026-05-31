@@ -1,28 +1,59 @@
 use serde::{Deserialize, Serialize};
 use std::fmt;
+use std::str::FromStr;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Instant;
 
-#[derive(Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 pub struct InfoHash(pub [u8; 20]);
 
 impl InfoHash {
-    pub fn as_bytes(&self) -> &[u8; 20] {
-        &self.0
+    pub fn as_bytes(&self) -> &[u8; 20] { &self.0 }
+    pub fn from_bytes(b: &[u8]) -> Option<Self> {
+        if b.len() != 20 { return None; }
+        let mut hash = [0u8; 20];
+        hash.copy_from_slice(b);
+        Some(InfoHash(hash))
     }
-
     pub fn from_hex(s: &str) -> Option<Self> {
         let bytes = hex::decode(s).ok()?;
-        if bytes.len() != 20 {
-            return None;
-        }
+        if bytes.len() != 20 { return None; }
         let mut hash = [0u8; 20];
         hash.copy_from_slice(&bytes);
         Some(InfoHash(hash))
     }
+    pub fn to_hex(&self) -> String { hex::encode(self.0) }
 
-    pub fn to_hex(&self) -> String {
-        hex::encode(self.0)
+    pub fn distance(&self, other: &InfoHash) -> InfoHash {
+        let mut xor = [0u8; 20];
+        for (i, (a, b)) in self.0.iter().zip(other.0.iter()).enumerate() {
+            xor[i] = a ^ b;
+        }
+        InfoHash(xor)
+    }
+
+    pub fn get_bit(&self, bit: u8) -> bool {
+        let byte = self.0[(bit / 8) as usize];
+        let mask = 1 << (7 - bit % 8);
+        byte & mask > 0
+    }
+
+    pub fn set_bit(&mut self, bit: u8, value: bool) {
+        let byte = &mut self.0[(bit / 8) as usize];
+        if value {
+            *byte |= 1 << (7 - bit % 8);
+        } else {
+            *byte &= !(1 << (7 - bit % 8));
+        }
+    }
+}
+
+impl FromStr for InfoHash {
+    type Err = crate::error::TorrentError;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Self::from_hex(s).ok_or_else(|| crate::error::TorrentError::MagnetParse(
+            format!("invalid info hash: {}", s)
+        ))
     }
 }
 
