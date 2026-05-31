@@ -107,7 +107,6 @@ pub fn app(
     set_theme_default(theme::dark_theme());
 
     let should_quit: Rc<Signal<bool>> = remember(|| signal(false));
-    let is_visible: Rc<Signal<bool>> = remember(|| signal(false));
     let selected: Rc<Signal<Option<InfoHash>>> = remember(|| signal(None));
     let active_tab: Rc<Signal<Tab>> = remember(|| signal(Tab::General));
     let filter_state: Rc<Signal<FilterState>> = remember(|| signal(FilterState::All));
@@ -127,8 +126,11 @@ pub fn app(
         while let Ok(cmd) = guard.try_recv() {
             match cmd {
                 TrayCommand::ToggleWindow => {
-                    let v = !is_visible.get();
-                    is_visible.set(v);
+                    if repose_platform::window_is_visible() {
+                        repose_platform::hide_app_window();
+                    } else {
+                        repose_platform::show_app_window();
+                    }
                 }
                 TrayCommand::Quit => {
                     should_quit.set(true);

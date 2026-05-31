@@ -44,8 +44,10 @@ impl AppTray {
                     let id = event.id();
                     if id.as_ref() == TOGGLE_ID {
                         let _ = command_tx.send(TrayCommand::ToggleWindow);
+                        repose_platform::wake_event_loop();
                     } else if id.as_ref() == QUIT_ID {
                         let _ = command_tx.send(TrayCommand::Quit);
+                        repose_platform::wake_event_loop();
                     }
                 }));
 

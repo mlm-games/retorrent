@@ -53,6 +53,11 @@ fn main() -> Result<()> {
     let tray = Arc::new(tray::AppTray::new(tray_cmd_tx));
     let tray_cmd_rx = Arc::new(Mutex::new(tray_cmd_rx));
 
+    // On Wayland, set_visible is a no-op so the close button would do nothing.
+    if std::env::var("WAYLAND_DISPLAY").is_err() {
+        repose_platform::set_close_to_tray(true);
+    }
+
     repose_platform::run_desktop_app(move |sched, _rc| {
         ui::app::app(
             sched,
