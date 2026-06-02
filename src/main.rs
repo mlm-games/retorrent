@@ -1,10 +1,10 @@
 mod bencode;
 mod config;
 mod dht;
-mod nat;
 mod engine;
 mod error;
 mod metainfo;
+mod nat;
 mod network;
 mod peer;
 mod piece;
@@ -18,9 +18,20 @@ mod webseed;
 use anyhow::Result;
 use config::Config;
 use engine::TorrentEngine;
+use metainfo::MetaInfo;
+use std::path::PathBuf;
 use std::sync::mpsc;
 use std::sync::{Arc, Mutex};
 use tracing_subscriber::{EnvFilter, fmt};
+
+#[derive(Clone)]
+pub struct PendingTorrent {
+    pub name: String,
+    pub total_size: u64,
+    pub files: Vec<crate::metainfo::FileInfo>,
+    pub data: Vec<u8>,
+    pub suggested_dir: PathBuf,
+}
 
 fn main() -> Result<()> {
     fmt()
@@ -31,14 +42,40 @@ fn main() -> Result<()> {
 
     let args: Vec<String> = std::env::args().collect();
     let headless = args.iter().any(|a| a == "--headless");
+
+    let mut download_dir_arg: Option<String> = None;
+    let mut i = 0;
+    while i < args.len() {
+        if args[i] == "--download-dir" && i + 1 < args.len() {
+            download_dir_arg = Some(args[i + 1].clone());
+            i += 2;
+            continue;
+        }
+        i += 1;
+    }
+
+    let mut skip_next = false;
     let torrent_files: Vec<String> = args
         .iter()
         .skip(1)
-        .filter(|a| !a.starts_with("--"))
+        .filter(|a| {
+            if skip_next {
+                skip_next = false;
+                return false;
+            }
+            if *a == "--download-dir" {
+                skip_next = true;
+                return false;
+            }
+            !a.starts_with("--")
+        })
         .cloned()
         .collect();
 
-    let config = Config::load_or_default();
+    let mut config = Config::load_or_default();
+    if let Some(dir) = download_dir_arg {
+        config.download_dir = std::path::PathBuf::from(dir);
+    }
     let num_threads = std::thread::available_parallelism()
         .map(|n| n.get())
         .unwrap_or(4)
@@ -53,29 +90,36 @@ fn main() -> Result<()> {
     let engine = rt.block_on(async { Arc::new(TorrentEngine::new(config).await) });
 
     let engine_for_shutdown = engine.clone();
-
+    let pending: Arc<Mutex<Vec<PendingTorrent>>> = Arc::new(Mutex::new(Vec::new()));
+    let suggested_dir = dirs::download_dir().unwrap_or_else(|| engine.config.download_dir.clone());
     for path in &torrent_files {
         match std::fs::read(path) {
-            Ok(data) => match engine.add_torrent_from_bytes(data) {
-                Ok(hash) => {
-                    tracing::info!("Added torrent from {} -> {}", path, hash);
+            Ok(data) => match MetaInfo::from_bytes(&data) {
+                Ok(meta) => {
+                    pending.lock().unwrap().push(PendingTorrent {
+                        name: meta.name.clone(),
+                        total_size: meta.total_size,
+                        files: meta.files.clone(),
+                        data,
+                        suggested_dir: suggested_dir.clone(),
+                    });
                 }
-                Err(e) => {
-                    tracing::error!("Failed to add {}: {}", path, e);
-                }
+                Err(e) => tracing::error!("Failed to parse {}: {}", path, e),
             },
             Err(e) => tracing::error!("Failed to read {}: {}", path, e),
         }
     }
 
-    {
-        let hashes = engine.get_all_info_hashes();
-        for hash in hashes {
-            engine.start_torrent(&hash, &rt);
-        }
-    }
-
     if headless {
+        // No UI: auto-add and start everything from the intent.
+        let pending = Arc::try_unwrap(pending)
+            .map(|m| m.into_inner().unwrap_or_default())
+            .unwrap_or_default();
+        for p in pending {
+            if let Ok(hash) = engine.add_torrent_from_bytes(p.data, Some(p.suggested_dir)) {
+                engine.start_torrent(&hash, &rt);
+            }
+        }
         return run_headless(engine, rt);
     }
 
@@ -95,6 +139,7 @@ fn main() -> Result<()> {
             rt.clone(),
             tray.clone(),
             tray_cmd_rx.clone(),
+            pending.clone(),
         )
     })?;
 

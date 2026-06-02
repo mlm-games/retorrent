@@ -5,6 +5,7 @@ use crate::metainfo::MetaInfo;
 use crate::network::TorrentSession;
 use crate::types::*;
 use dashmap::DashMap;
+use std::path::PathBuf;
 use std::sync::Arc;
 use tokio_util::sync::CancellationToken;
 
@@ -59,7 +60,11 @@ impl TorrentEngine {
         engine
     }
 
-    pub fn add_torrent_from_bytes(&self, data: Vec<u8>) -> Result<InfoHash> {
+    pub fn add_torrent_from_bytes(
+        &self,
+        data: Vec<u8>,
+        download_dir: Option<PathBuf>,
+    ) -> Result<InfoHash> {
         let meta = MetaInfo::from_bytes(&data)?;
         let info_hash = meta.info_hash;
 
@@ -67,9 +72,14 @@ impl TorrentEngine {
             return Ok(info_hash);
         }
 
+        let dir = download_dir.unwrap_or_else(|| self.config.download_dir.clone());
+        if let Err(e) = std::fs::create_dir_all(&dir) {
+            tracing::warn!("Failed to create download dir {:?}: {}", dir, e);
+        }
+
         let session = TorrentSession::new(
             meta,
-            self.config.download_dir.clone(),
+            dir,
             self.peer_id,
             self.config.clone(),
         )?;
@@ -87,7 +97,11 @@ impl TorrentEngine {
         Ok(info_hash)
     }
 
-    pub fn add_torrent_from_magnet(&self, uri: &str) -> Result<InfoHash> {
+    pub fn add_torrent_from_magnet(
+        &self,
+        uri: &str,
+        download_dir: Option<PathBuf>,
+    ) -> Result<InfoHash> {
         let magnet = MagnetLink::parse(uri)?;
         let info_hash = magnet.info_hash;
 
@@ -118,9 +132,14 @@ impl TorrentEngine {
             is_private: false,
         };
 
+        let dir = download_dir.unwrap_or_else(|| self.config.download_dir.clone());
+        if let Err(e) = std::fs::create_dir_all(&dir) {
+            tracing::warn!("Failed to create download dir {:?}: {}", dir, e);
+        }
+
         let session = TorrentSession::new(
             meta,
-            self.config.download_dir.clone(),
+            dir,
             self.peer_id,
             self.config.clone(),
         )?;

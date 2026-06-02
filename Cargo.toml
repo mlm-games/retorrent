@@ -48,4 +48,6 @@ igd = "0.12"
 gtk = "0.18"
 tray-icon = "0.24"
 rfd = "0.17"
-repose-platform = { path = "../repose/crates/repose-platform", features = ["desktop"] }
+repose-platform = { path = "../repose/crates/repose-platform", features = [
+    "desktop",
+] }
