@@ -1,8 +1,9 @@
 mod error;
+mod node;
 mod peer_store;
+mod persistence;
 mod protocol;
 mod routing_table;
-mod node;
 
 pub use error::{Error, Result};
 pub use node::{DhtBuilder, DhtNode, DhtStats};

@@ -30,9 +30,9 @@ impl<'de> Deserialize<'de> for LeafBucket {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where D: Deserializer<'de> {
         #[derive(Deserialize)]
-        struct Tmp { nodes: Vec<serde_json::Value> }
+        struct Tmp { nodes: Vec<RoutingTableNode> }
         Tmp::deserialize(deserializer).map(|t| Self {
-            nodes: Vec::new(),
+            nodes: t.nodes,
             last_refreshed: Instant::now(),
         })
     }
@@ -70,6 +70,25 @@ impl Serialize for BucketTreeNode {
     }
 }
 
+impl<'de> Deserialize<'de> for BucketTreeNode {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where D: Deserializer<'de> {
+        #[derive(Deserialize)]
+        struct Tmp {
+            bits: u8,
+            start: String,
+            end_inclusive: String,
+            data: BucketTreeNodeData,
+        }
+        Tmp::deserialize(deserializer).and_then(|t| Ok(Self {
+            bits: t.bits,
+            start: InfoHash::from_hex(&t.start).ok_or_else(|| serde::de::Error::custom("bad hex in start"))?,
+            end_inclusive: InfoHash::from_hex(&t.end_inclusive).ok_or_else(|| serde::de::Error::custom("bad hex in end_inclusive"))?,
+            data: t.data,
+        }))
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct BucketTree {
     data: Vec<BucketTreeNode>,
@@ -84,6 +103,23 @@ impl Serialize for BucketTree {
         s.serialize_field("size", &self.size)?;
         s.serialize_field("max_size", &self.max_size)?;
         s.end()
+    }
+}
+
+impl<'de> Deserialize<'de> for BucketTree {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where D: Deserializer<'de> {
+        #[derive(Deserialize)]
+        struct Tmp {
+            data: Vec<BucketTreeNode>,
+            size: usize,
+            max_size: usize,
+        }
+        Tmp::deserialize(deserializer).map(|t| Self {
+            data: t.data,
+            size: t.size,
+            max_size: t.max_size,
+        })
     }
 }
 
@@ -315,7 +351,32 @@ impl Serialize for RoutingTableNode {
     }
 }
 
-#[derive(Debug, Clone, Serialize, PartialEq)]
+impl<'de> Deserialize<'de> for RoutingTableNode {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where D: Deserializer<'de> {
+        #[derive(Deserialize)]
+        struct Tmp {
+            id: String,
+            addr: SocketAddr,
+            #[allow(dead_code)]
+            status: Option<NodeStatus>,
+            #[serde(default)]
+            errors_in_a_row: usize,
+        }
+        let t = Tmp::deserialize(deserializer)?;
+        let id = InfoHash::from_hex(&t.id).ok_or_else(|| serde::de::Error::custom("bad hex in id"))?;
+        Ok(Self {
+            id,
+            addr: t.addr,
+            last_request: None,
+            last_response: None,
+            last_query: None,
+            errors_in_a_row: t.errors_in_a_row,
+        })
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub enum NodeStatus {
     Good, Questionable, Bad, Unknown,
 }
@@ -361,6 +422,23 @@ impl Serialize for RoutingTable {
         s.serialize_field("size", &self.size)?;
         s.serialize_field("buckets", &self.buckets)?;
         s.end()
+    }
+}
+
+impl<'de> Deserialize<'de> for RoutingTable {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where D: Deserializer<'de> {
+        #[derive(Deserialize)]
+        struct Tmp {
+            id: String,
+            #[allow(dead_code)]
+            size: usize,
+            buckets: BucketTree,
+        }
+        let t = Tmp::deserialize(deserializer)?;
+        let id = InfoHash::from_hex(&t.id).ok_or_else(|| serde::de::Error::custom("bad hex in id"))?;
+        let size = t.buckets.iter_nodes().count();
+        Ok(Self { id, size, buckets: t.buckets })
     }
 }
 

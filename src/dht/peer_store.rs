@@ -34,6 +34,19 @@ pub struct PeerStore {
     peers_len: AtomicU32,
 }
 
+impl Serialize for PeerStore {
+    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        use serde::ser::SerializeStruct;
+        let mut st = s.serialize_struct("PeerStore", 5)?;
+        st.serialize_field("self_id", &self.self_id.to_hex())?;
+        st.serialize_field("max_remembered_tokens", &self.max_remembered_tokens)?;
+        st.serialize_field("max_remembered_peers", &self.max_remembered_peers)?;
+        st.serialize_field("max_distance", &self.max_distance.to_hex())?;
+        st.serialize_field("peers", &self.collect_persisted())?;
+        st.end()
+    }
+}
+
 impl PeerStore {
     pub fn new(self_id: InfoHash) -> Self {
         Self {
@@ -45,6 +58,29 @@ impl PeerStore {
             peers: DashMap::new(),
             peers_len: AtomicU32::new(0),
         }
+    }
+
+    pub fn new_with_persistence(
+        self_id: InfoHash,
+        peers: Vec<(InfoHash, Vec<SocketAddr>)>,
+    ) -> Self {
+        let s = Self::new(self_id);
+        let mut total = 0u32;
+        for (info_hash, addrs) in peers {
+            let stored: Vec<StoredPeer> = addrs.into_iter()
+                .map(|addr| StoredPeer { addr, time: Utc::now() })
+                .collect();
+            total += stored.len() as u32;
+            s.peers.insert(info_hash, stored);
+        }
+        s.peers_len.store(total, Ordering::SeqCst);
+        s
+    }
+
+    pub fn collect_persisted(&self) -> Vec<(InfoHash, Vec<SocketAddr>)> {
+        self.peers.iter()
+            .map(|entry| (entry.key().clone(), entry.value().iter().map(|p| p.addr).collect()))
+            .collect()
     }
 
     pub fn gen_token_for(&self, node_id: InfoHash, addr: SocketAddr) -> [u8; 4] {

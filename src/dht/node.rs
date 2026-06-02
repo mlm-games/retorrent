@@ -71,6 +71,23 @@ impl RateLimiter {
             tokio::time::sleep(Duration::from_millis(4)).await;
         }
     }
+
+    fn allow(&self) -> bool {
+        let mut s = self.state.lock();
+        let now = Instant::now();
+        let elapsed = now.duration_since(s.last_refill);
+        let refill = (elapsed.as_secs_f64() * self.refill_per_sec as f64) as usize;
+        if refill > 0 {
+            s.tokens = (s.tokens + refill).min(self.capacity);
+            s.last_refill = now;
+        }
+        if s.tokens > 0 {
+            s.tokens -= 1;
+            true
+        } else {
+            false
+        }
+    }
 }
 
 #[derive(Debug, Serialize)]
@@ -115,16 +132,17 @@ struct MaybeUsefulNode {
 }
 
 pub struct DhtNode {
-    id: InfoHash,
+    pub(crate) id: InfoHash,
     next_transaction_id: AtomicU16,
     inflight: DashMap<(u16, SocketAddr), OutstandingRequest>,
     pub(crate) routing_table_v4: RwLock<RoutingTable>,
     pub(crate) routing_table_v6: RwLock<RoutingTable>,
-    listen_addr: SocketAddr,
+    pub(crate) listen_addr: SocketAddr,
     worker_tx: UnboundedSender<WorkerSendRequest>,
     cancellation_token: CancellationToken,
     pub(crate) peer_store: PeerStore,
     rate_limiter: RateLimiter,
+    inbound_rate_limiter: RateLimiter,
 }
 
 impl DhtNode {
@@ -148,6 +166,7 @@ impl DhtNode {
             cancellation_token,
             peer_store,
             rate_limiter: RateLimiter::new(DHT_QUERIES_PER_SECOND),
+            inbound_rate_limiter: RateLimiter::new(DHT_QUERIES_PER_SECOND * 2),
         }
     }
 
@@ -724,6 +743,7 @@ impl DhtWorker {
         out_tx: tokio::sync::mpsc::Sender<(protocol::Message, SocketAddr)>,
     ) -> Result<()> {
         let socket_reader = socket.clone();
+        let dht_writer = dht.clone();
         let writer = async move {
             let mut interval = tokio::time::interval(Duration::from_millis(100));
             let mut queue: VecDeque<WorkerSendRequest> = VecDeque::new();
@@ -741,7 +761,7 @@ impl DhtWorker {
                             if let Err(e) = socket.send_to(&req.data, req.addr).await {
                                 debug!("send error to {}: {}", req.addr, e);
                                 if let Some(tid) = req.our_tid {
-                                    if let Some((_, req)) = dht.inflight.remove(&(tid, req.addr)) {
+                                    if let Some((_, req)) = dht_writer.inflight.remove(&(tid, req.addr)) {
                                         let _ = req.done.send(Err(Error::Send(e)));
                                     }
                                 }
@@ -754,10 +774,24 @@ impl DhtWorker {
         let reader = async {
             let mut buf = vec![0u8; 65536];
             loop {
-                let (size, addr) = socket_reader.recv_from(&mut buf).await.map_err(Error::Recv)?;
-                if let Some(msg) = protocol::deserialize(&buf[..size]) {
-                    if out_tx.send((msg, addr)).await.is_err() {
-                        return Err(Error::DhtDead);
+                match socket_reader.recv_from(&mut buf).await {
+                    Ok((size, addr)) => {
+                        if size == 0 { continue; }
+                        if !dht.inbound_rate_limiter.allow() {
+                            debug!("inbound rate limited from {}", addr);
+                            continue;
+                        }
+                        if let Some(msg) = protocol::deserialize(&buf[..size]) {
+                            if out_tx.send((msg, addr)).await.is_err() {
+                                return Err(Error::DhtDead);
+                            }
+                        } else {
+                            trace!("unparseable KRPC from {}", addr);
+                        }
+                    }
+                    Err(e) => {
+                        warn!("recv error: {} (continuing)", e);
+                        tokio::time::sleep(Duration::from_millis(50)).await;
                     }
                 }
             }
@@ -822,26 +856,62 @@ pub struct DhtBuilder;
 
 impl DhtBuilder {
     pub async fn new() -> Result<Arc<DhtNode>> {
-        Self::with_port(0).await
+        Self::with_config(crate::dht::persistence::PersistentDhtConfig::default()).await
     }
 
     pub async fn with_port(port: u16) -> Result<Arc<DhtNode>> {
-        let listen_addr = SocketAddr::from(([0, 0, 0, 0], port));
+        let mut cfg = crate::dht::persistence::PersistentDhtConfig::default();
+        cfg.port = Some(port);
+        Self::with_config(cfg).await
+    }
+
+    pub async fn with_config(cfg: crate::dht::persistence::PersistentDhtConfig) -> Result<Arc<DhtNode>> {
+        use crate::dht::persistence;
+
+        let path = match cfg.config_filename.clone() {
+            Some(p) => p,
+            None => persistence::default_persistence_filename()?,
+        };
+        let dump_interval = cfg.dump_interval.unwrap_or_else(|| Duration::from_secs(60));
+
+        let persisted = persistence::load_persistent_state(&path);
+
+        let requested_port = cfg.port.unwrap_or(0);
+        let listen_addr = SocketAddr::from(([0, 0, 0, 0], requested_port));
         let socket = Arc::new(UdpSocket::bind(listen_addr).await.map_err(Error::Bind)?);
         let actual_addr = socket.local_addr().map_err(Error::Bind)?;
         info!("DHT listening on {}", actual_addr);
 
-        let mut id_bytes = [0u8; 20];
-        rand::rng().fill_bytes(&mut id_bytes);
-        let id = InfoHash(id_bytes);
-        info!("DHT node ID: {}", id.to_hex());
+        let (id, table_v4, table_v6, peer_store) = match &persisted {
+            Some(p) => {
+                let id = InfoHash::from_hex(&p.node_id).unwrap_or_else(|| {
+                    let mut b = [0u8; 20];
+                    rand::rng().fill_bytes(&mut b);
+                    InfoHash(b)
+                });
+                let v4 = p.table_v4.clone();
+                let v6 = p.table_v6.clone().unwrap_or_else(|| RoutingTable::new(id));
+                let ps = persistence::make_persistent_peer_store(id, p);
+                info!("DHT using persisted node ID: {}", id.to_hex());
+                (id, Some(v4), Some(v6), ps)
+            }
+            None => {
+                let mut id_bytes = [0u8; 20];
+                rand::rng().fill_bytes(&mut id_bytes);
+                let id = InfoHash(id_bytes);
+                info!("DHT node ID (new): {}", id.to_hex());
+                let ps = PeerStore::new(id);
+                (id, None, None, ps)
+            }
+        };
 
         let (in_tx, in_rx) = unbounded_channel();
         let token = CancellationToken::new();
         let dht = Arc::new(DhtNode::new_internal(
-            id, in_tx, None, None, actual_addr,
-            PeerStore::new(id), token,
+            id, in_tx, table_v4, table_v6, actual_addr, peer_store, token,
         ));
+
+        persistence::spawn_dumper(dht.clone(), path, dump_interval, dht.cancellation_token.clone());
 
         let worker = DhtWorker { socket, dht: dht.clone() };
         let bootstrap_addrs: Vec<String> = DHT_BOOTSTRAP.iter().map(|s| s.to_string()).collect();

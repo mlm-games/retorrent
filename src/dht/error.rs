@@ -46,6 +46,9 @@ pub enum Error {
 
     #[error("bencode error: {0}")]
     Bencode(String),
+
+    #[error("persistence error: {0}")]
+    Persistence(String),
 }
 
 pub type Result<T> = std::result::Result<T, Error>;
