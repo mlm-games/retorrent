@@ -786,19 +786,9 @@ impl TorrentSession {
                 PeerMessage::Port(dht_port) => {
                     if let Some(ref dht) = *self.dht.lock() {
                         let dht_addr = SocketAddr::V4(SocketAddrV4::new(*addr.ip(), dht_port));
-                        let mut table = if dht_addr.is_ipv4() {
-                            dht.routing_table_v4.write()
-                        } else {
-                            dht.routing_table_v6.write()
-                        };
-                        // Derive a node ID from IP:port (we don't know the node's ID)
-                        // Use SHA-1 of the address as a fake node ID for now
-                        let mut hasher = sha1::Sha1::new();
-                        sha1::Digest::update(&mut hasher, dht_addr.to_string().as_bytes());
-                        let hash = hasher.finalize();
-                        let mut id = [0u8; 20];
-                        id.copy_from_slice(&hash);
-                        table.add_node(InfoHash(id), dht_addr);
+                        if dht_addr.port() != 0 {
+                            dht.ping_node(dht_addr);
+                        }
                     }
                 }
                 _ => {}

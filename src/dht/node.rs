@@ -27,6 +27,52 @@ use crate::types::InfoHash;
 
 fn now() -> Instant { Instant::now() }
 
+const DHT_QUERIES_PER_SECOND: usize = 250;
+
+struct RateLimiter {
+    state: parking_lot::Mutex<RateLimiterState>,
+    capacity: usize,
+    refill_per_sec: usize,
+}
+
+struct RateLimiterState {
+    tokens: usize,
+    last_refill: Instant,
+}
+
+impl RateLimiter {
+    fn new(per_sec: usize) -> Self {
+        Self {
+            capacity: per_sec / 10,
+            refill_per_sec: per_sec,
+            state: parking_lot::Mutex::new(RateLimiterState {
+                tokens: per_sec / 10,
+                last_refill: Instant::now(),
+            }),
+        }
+    }
+
+    async fn acquire(&self) {
+        loop {
+            {
+                let mut s = self.state.lock();
+                let now = Instant::now();
+                let elapsed = now.duration_since(s.last_refill);
+                let refill = (elapsed.as_secs_f64() * self.refill_per_sec as f64) as usize;
+                if refill > 0 {
+                    s.tokens = (s.tokens + refill).min(self.capacity);
+                    s.last_refill = now;
+                }
+                if s.tokens > 0 {
+                    s.tokens -= 1;
+                    return;
+                }
+            }
+            tokio::time::sleep(Duration::from_millis(4)).await;
+        }
+    }
+}
+
 #[derive(Debug, Serialize)]
 pub struct DhtStats {
     pub id: String,
@@ -78,6 +124,7 @@ pub struct DhtNode {
     worker_tx: UnboundedSender<WorkerSendRequest>,
     cancellation_token: CancellationToken,
     pub(crate) peer_store: PeerStore,
+    rate_limiter: RateLimiter,
 }
 
 impl DhtNode {
@@ -100,12 +147,14 @@ impl DhtNode {
             worker_tx: tx,
             cancellation_token,
             peer_store,
+            rate_limiter: RateLimiter::new(DHT_QUERIES_PER_SECOND),
         }
     }
 
-    fn create_message(&self, request: &Request, _addr: SocketAddr) -> (u16, Vec<u8>) {
+    fn create_message(&self, request: &Request, addr: SocketAddr) -> (u16, Vec<u8>) {
         let tid = self.next_transaction_id.fetch_add(1, Ordering::Relaxed);
         let tid_bytes = protocol::encode_transaction_id(tid);
+        let want = protocol::Want::for_addr(addr);
         let msg = match request {
             Request::Ping => protocol::Message::PingRequest {
                 transaction_id: tid_bytes.clone(),
@@ -115,11 +164,13 @@ impl DhtNode {
                 transaction_id: tid_bytes.clone(),
                 id: self.id,
                 target: *target,
+                want,
             },
             Request::GetPeers(info_hash) => protocol::Message::GetPeersRequest {
                 transaction_id: tid_bytes.clone(),
                 id: self.id,
                 info_hash: *info_hash,
+                want,
             },
             Request::Announce { info_hash, token, port } => protocol::Message::AnnouncePeerRequest {
                 transaction_id: tid_bytes.clone(),
@@ -135,6 +186,7 @@ impl DhtNode {
     }
 
     async fn request(&self, request: Request, addr: SocketAddr) -> Result<ResponseOrError> {
+        self.rate_limiter.acquire().await;
         let (tid, data) = self.create_message(&request, addr);
         let key = (tid, addr);
         let (tx, rx) = oneshot::channel();
@@ -155,27 +207,28 @@ impl DhtNode {
         if addr.is_ipv4() { &self.routing_table_v4 } else { &self.routing_table_v6 }
     }
 
-    fn generate_compact_nodes(&self, target: InfoHash, table: &RoutingTable) -> (Vec<u8>, Vec<u8>) {
+    fn generate_compact_nodes(&self, target: InfoHash, table: &RoutingTable, want: protocol::Want) -> (Vec<u8>, Vec<u8>) {
         let mut nodes_v4 = Vec::new();
         let mut nodes_v6 = Vec::new();
         for node in table.sorted_by_distance_from(target, now()).iter().take(8) {
             let node_id = node.id();
             let addr = node.addr();
-            match addr {
-                SocketAddr::V4(v4) => {
+            match (addr, want) {
+                (SocketAddr::V4(v4), protocol::Want::V4 | protocol::Want::Both) => {
                     let mut buf = Vec::with_capacity(26);
                     buf.extend_from_slice(&node_id.0);
                     buf.extend_from_slice(&v4.ip().octets());
                     buf.extend_from_slice(&v4.port().to_be_bytes());
                     nodes_v4.extend_from_slice(&buf);
                 }
-                SocketAddr::V6(v6) => {
+                (SocketAddr::V6(v6), protocol::Want::V6 | protocol::Want::Both) => {
                     let mut buf = Vec::with_capacity(38);
                     buf.extend_from_slice(&node_id.0);
                     buf.extend_from_slice(&v6.ip().octets());
                     buf.extend_from_slice(&v6.port().to_be_bytes());
                     nodes_v6.extend_from_slice(&buf);
                 }
+                _ => {}
             }
         }
         (nodes_v4, nodes_v6)
@@ -191,6 +244,16 @@ impl DhtNode {
         );
 
         if is_response {
+            let responder_id = match &msg {
+                protocol::Message::PingResponse { id, .. }
+                | protocol::Message::FindNodeResponse { id, .. }
+                | protocol::Message::GetPeersResponse { id, .. }
+                | protocol::Message::AnnouncePeerResponse { id, .. } => Some(*id),
+                _ => None,
+            };
+            if let Some(rid) = responder_id {
+                self.table_for(addr).write().add_node(rid, addr);
+            }
             let tid = msg.transaction_id();
             let tid_val = protocol::decode_transaction_id(tid).ok_or(Error::BadTransactionId)?;
             let request = self.inflight.remove(&(tid_val, addr)).map(|(_, v)| v).ok_or(Error::RequestNotFound)?;
@@ -211,11 +274,12 @@ impl DhtNode {
                 });
                 let _ = self.worker_tx.send(WorkerSendRequest { our_tid: None, data: resp, addr });
             }
-            protocol::Message::FindNodeRequest { id, target, .. } => {
+            protocol::Message::FindNodeRequest { id, target, want, .. } => {
                 self.table_for(addr).write().mark_last_query(id, now());
+                let want = if *want == protocol::Want::None { protocol::Want::for_addr(addr) } else { *want };
                 let (nodes, nodes6) = {
                     let table = self.table_for(addr).read();
-                    self.generate_compact_nodes(*target, &table)
+                    self.generate_compact_nodes(*target, &table, want)
                 };
                 let resp = protocol::serialize(&protocol::Message::FindNodeResponse {
                     transaction_id: msg.transaction_id().to_vec(),
@@ -223,18 +287,20 @@ impl DhtNode {
                 });
                 let _ = self.worker_tx.send(WorkerSendRequest { our_tid: None, data: resp, addr });
             }
-            protocol::Message::GetPeersRequest { id, info_hash, .. } => {
+            protocol::Message::GetPeersRequest { id, info_hash, want, .. } => {
                 self.table_for(addr).write().mark_last_query(id, now());
+                let want = if *want == protocol::Want::None { protocol::Want::for_addr(addr) } else { *want };
                 let (nodes, nodes6) = {
                     let table = self.table_for(addr).read();
-                    self.generate_compact_nodes(*info_hash, &table)
+                    self.generate_compact_nodes(*info_hash, &table, want)
                 };
-                let peers = self.peer_store.get_peers(*info_hash);
-                let mut values = Vec::new();
-                for peer in &peers {
-                    let compact = protocol::build_compact_peer_addr(*peer);
-                    values.extend_from_slice(&compact);
-                }
+                let values: Vec<SocketAddr> = self.peer_store.get_peers(*info_hash).into_iter()
+                    .filter(|a| match (a, want) {
+                        (SocketAddr::V4(_), protocol::Want::V4 | protocol::Want::Both) => true,
+                        (SocketAddr::V6(_), protocol::Want::V6 | protocol::Want::Both) => true,
+                        _ => false,
+                    })
+                    .collect();
                 let token = self.peer_store.gen_token_for(*id, addr);
                 let resp = protocol::serialize(&protocol::Message::GetPeersResponse {
                     transaction_id: msg.transaction_id().to_vec(),
@@ -271,6 +337,13 @@ impl DhtNode {
 
     pub fn get_peers(self: &Arc<Self>, info_hash: InfoHash, announce_port: Option<u16>) -> RequestPeersStream {
         RequestPeersStream::new(self.clone(), info_hash, announce_port)
+    }
+
+    pub fn ping_node(self: &Arc<Self>, addr: SocketAddr) {
+        let dht = self.clone();
+        tokio::spawn(async move {
+            let _ = dht.request(Request::Ping, addr).await;
+        });
     }
 }
 
@@ -352,10 +425,8 @@ impl<C: RecursiveCallbacks> RecursiveRequest<C> {
         self.mark_responded(addr, &response);
 
         if let protocol::Message::GetPeersResponse { values, nodes, nodes6, .. } = &response {
-            for peer_bytes in values.chunks(6) {
-                if let Some(addr) = protocol::parse_compact_peer_addr(peer_bytes) {
-                    let _ = self.peer_tx.send(addr);
-                }
+            for peer in values {
+                let _ = self.peer_tx.send(*peer);
             }
             for (node_id, node_addr) in protocol::parse_compact_nodes(nodes)
                 .into_iter().chain(protocol::parse_compact_nodes_v6(nodes6))
@@ -370,6 +441,7 @@ impl<C: RecursiveCallbacks> RecursiveRequest<C> {
             for (node_id, node_addr) in protocol::parse_compact_nodes(nodes)
                 .into_iter().chain(protocol::parse_compact_nodes_v6(nodes6))
             {
+                if node_addr.is_ipv4() != addr.is_ipv4() { continue; }
                 if self.should_request(node_id, node_addr, depth) {
                     let _ = self.node_tx.send((Some(node_id), node_addr, depth + 1));
                 }
@@ -468,12 +540,12 @@ impl RecursiveRequest<CallbacksFindNodes> {
 }
 
 impl RecursiveRequest<CallbacksGetPeers> {
-    fn request_peers_forever(self: Arc<Self>, mut node_rx: UnboundedReceiver<(Option<InfoHash>, SocketAddr, usize)>) -> tokio::task::JoinHandle<()> {
+    fn request_peers_forever(self: Arc<Self>, is_v4: bool, mut node_rx: UnboundedReceiver<(Option<InfoHash>, SocketAddr, usize)>) -> tokio::task::JoinHandle<()> {
         tokio::spawn(async move {
             let this = &*self;
             let looper = async {
                 loop {
-                    let sleep = match this.get_peers_root() {
+                    let sleep = match this.get_peers_root(is_v4) {
                         0 => Duration::from_secs(1),
                         n if n < 8 => REQUERY_INTERVAL / 8 * (n as u32),
                         _ => REQUERY_INTERVAL,
@@ -488,6 +560,7 @@ impl RecursiveRequest<CallbacksGetPeers> {
                     biased;
                     addr = node_rx.recv() => {
                         if let Some((id, addr, depth)) = addr {
+                            if is_v4 != addr.is_ipv4() { continue; }
                             futs.push(this.request_one(id, addr, depth));
                         }
                     }
@@ -498,10 +571,19 @@ impl RecursiveRequest<CallbacksGetPeers> {
         })
     }
 
-    fn get_peers_root(&self) -> usize {
-        let table = self.dht.table_for(SocketAddr::from(([0, 0, 0, 0], 0))).read();
+    fn get_peers_root(&self, is_v4: bool) -> usize {
+        let probe = if is_v4 {
+            SocketAddr::from(([0, 0, 0, 0], 0))
+        } else {
+            SocketAddr::from(([0u16; 8], 0))
+        };
+        let table = self.dht.table_for(probe).read();
         let count = table.sorted_by_distance_from(self.info_hash, now())
-            .iter().take(8).filter(|n| self.node_tx.send((Some(n.id()), n.addr(), 0)).is_ok()).count();
+            .iter()
+            .filter(|n| n.addr().is_ipv4() == is_v4)
+            .take(8)
+            .filter(|n| self.node_tx.send((Some(n.id()), n.addr(), 0)).is_ok())
+            .count();
         count
     }
 }
@@ -515,7 +597,7 @@ pub struct RequestPeersStream {
 impl RequestPeersStream {
     fn new(dht: Arc<DhtNode>, info_hash: InfoHash, announce_port: Option<u16>) -> Self {
         let (peer_tx, peer_rx) = unbounded_channel();
-        let make = |dht: Arc<DhtNode>, peer_tx: UnboundedSender<SocketAddr>| {
+        let make = |is_v4: bool, dht: Arc<DhtNode>, peer_tx: UnboundedSender<SocketAddr>| {
             let (node_tx, node_rx) = unbounded_channel();
             let rp = Arc::new(RecursiveRequest {
                 max_depth: 4, info_hash,
@@ -525,10 +607,10 @@ impl RequestPeersStream {
                 peer_tx, node_tx,
                 callbacks: CallbacksGetPeers { announce_port },
             });
-            rp.request_peers_forever(node_rx)
+            rp.request_peers_forever(is_v4, node_rx)
         };
-        let v4 = make(dht.clone(), peer_tx.clone());
-        let v6 = make(dht, peer_tx);
+        let v4 = make(true, dht.clone(), peer_tx.clone());
+        let v6 = make(false, dht, peer_tx);
         Self { rx: peer_rx, cancel_v4: v4, cancel_v6: v6 }
     }
 }
@@ -571,11 +653,23 @@ impl DhtWorker {
     async fn bootstrap(&self, addrs: &[String]) -> Result<()> {
         let mut successes = 0;
         for addr in addrs {
-            match self.bootstrap_hostname(addr).await {
-                Ok(_) => successes += 1,
-                Err(e) => warn!("bootstrap {} failed: {}", addr, e),
+            let mut delay_secs: u64 = 1;
+            let max_delay: u64 = 60;
+            loop {
+                match self.bootstrap_hostname(addr).await {
+                    Ok(_) => {
+                        successes += 1;
+                        break;
+                    }
+                    Err(e) => {
+                        warn!("bootstrap {} failed: {}", addr, e);
+                        if successes > 0 { break; }
+                        let jitter = rand::random::<u64>() % 1000;
+                        tokio::time::sleep(Duration::from_millis(delay_secs * 1000 + jitter)).await;
+                        delay_secs = (delay_secs * 2).min(max_delay);
+                    }
+                }
             }
-            tokio::time::sleep(Duration::from_secs(2)).await;
         }
         if successes == 0 { return Err(Error::BootstrapFailed); }
         Ok(())
@@ -671,21 +765,6 @@ impl DhtWorker {
         tokio::select! {
             e = writer => e,
             e = reader => e,
-        }
-    }
-
-    async fn reader(
-        socket: Arc<UdpSocket>,
-        out_tx: tokio::sync::mpsc::Sender<(protocol::Message, SocketAddr)>,
-    ) -> Result<()> {
-        let mut buf = vec![0u8; 65536];
-        loop {
-            let (size, addr) = socket.recv_from(&mut buf).await.map_err(Error::Recv)?;
-            if let Some(msg) = protocol::deserialize(&buf[..size]) {
-                if out_tx.send((msg, addr)).await.is_err() {
-                    return Err(Error::DhtDead);
-                }
-            }
         }
     }
 
