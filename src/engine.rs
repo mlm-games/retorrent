@@ -23,13 +23,13 @@ impl TorrentEngine {
         std::fs::create_dir_all(Config::resume_dir()).ok();
 
         let dht = if config.dht_enabled {
-            match crate::dht::DhtBuilder::new().await {
+            match crate::dht::DhtBuilder::with_port(config.listen_port).await {
                 Ok(node) => {
                     tracing::info!("DHT started on {}", node.listen_addr());
                     Some(node)
                 }
                 Err(e) => {
-                    tracing::warn!("DHT failed to start: {}", e);
+                    tracing::warn!("DHT failed to start on :{}: {}", config.listen_port, e);
                     None
                 }
             }
@@ -111,6 +111,7 @@ impl TorrentEngine {
             total_size: 0,
             announce: magnet.trackers.first().cloned(),
             announce_list,
+            url_list: Vec::new(),
             comment: None,
             created_by: None,
             creation_date: None,

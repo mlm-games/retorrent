@@ -13,6 +13,7 @@ pub struct MetaInfo {
     pub total_size: u64,
     pub announce: Option<String>,
     pub announce_list: Vec<Vec<String>>,
+    pub url_list: Vec<String>,
     #[allow(dead_code)]
     pub comment: Option<String>,
     #[allow(dead_code)]
@@ -53,6 +54,7 @@ impl MetaInfo {
             .map(|s| s.to_string());
 
         let announce_list = Self::parse_announce_list(root_dict.get("announce-list"));
+        let url_list = Self::parse_string_list(root_dict.get("url-list"));
 
         let comment = root_dict
             .get("comment")
@@ -140,6 +142,7 @@ impl MetaInfo {
             total_size,
             announce,
             announce_list,
+            url_list,
             comment,
             created_by,
             creation_date,
@@ -214,6 +217,39 @@ impl MetaInfo {
                     .collect()
             })
             .unwrap_or_default()
+    }
+
+    /// Parse BEP-19 `url-list` (a list of strings) and the older
+    /// `httpseeds` field. Webseed URLs are HTTP(S) endpoints from which
+    /// pieces can be fetched with `Range` requests.
+    fn parse_string_list(val: Option<&BencodeValue>) -> Vec<String> {
+        val.and_then(|v| v.as_list())
+            .map(|items| {
+                items
+                    .iter()
+                    .filter_map(|u| u.as_string().map(|s| s.to_string()))
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
+
+    /// Build the webseed URL for a given file, per BEP-19.
+    /// `base` is one of the entries from `url-list` or `httpseeds`.
+    /// For a single-file torrent, the file path is just `info.name`
+    /// (and `file_path` will equal `self.name`).
+    /// For multi-file torrents, `file_path` already includes the
+    /// `info.name` prefix (the way `parse_multi_file` constructs it).
+    pub fn webseed_url_for(&self, base: &str, file_path: &str) -> String {
+        let base = if base.ends_with('/') {
+            base.to_string()
+        } else {
+            format!("{}/", base)
+        };
+        // file_path is the torrent-relative file path. We append it
+        // directly to the base URL. For single-file torrents,
+        // file_path == self.name. For multi-file torrents, file_path
+        // is "{info.name}/{rest}" already.
+        format!("{}{}", base, file_path)
     }
 
     pub fn num_pieces(&self) -> u32 {

@@ -243,6 +243,14 @@ impl PieceManager {
         Some(collector)
     }
 
+    pub fn have_piece(&self, index: u32) -> bool {
+        self.have.lock().get(index as usize).copied().unwrap_or(false)
+    }
+
+    pub fn piece_in_progress(&self, index: u32) -> bool {
+        self.in_progress.lock().contains_key(&index)
+    }
+
     pub fn mark_piece_complete(&self, index: u32) {
         self.in_progress.lock().remove(&index);
         self.have.lock()[index as usize] = true;

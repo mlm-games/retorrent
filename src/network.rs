@@ -10,7 +10,7 @@ use crate::types::*;
 use futures::StreamExt;
 use parking_lot::Mutex;
 use sha1::Digest;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::net::{SocketAddr, SocketAddrV4};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
@@ -215,6 +215,7 @@ impl TorrentSession {
 
         let semaphore = Arc::new(Semaphore::new(max_peers));
         let peer_session = self.clone();
+        let session_tx = peer_tx.clone();
         tokio::spawn(async move {
             while let Some(event) = peer_rx.recv().await {
                 let (addr, incoming) = match event {
@@ -225,6 +226,7 @@ impl TorrentSession {
                             }
                             let session = peer_session.clone();
                             let sem = semaphore.clone();
+                            let evt_tx = session_tx.clone();
                             tokio::spawn(async move {
                                 let _permit = match sem.acquire().await {
                                     Ok(p) => p,
@@ -243,7 +245,7 @@ impl TorrentSession {
                                     counter: &session.active_peers,
                                 };
 
-                                if let Err(e) = session.handle_peer(addr, None).await {
+                                if let Err(e) = session.handle_peer(addr, None, evt_tx).await {
                                     tracing::debug!("Peer {} error: {}", addr, e);
                                 }
                             });
@@ -258,6 +260,7 @@ impl TorrentSession {
                 }
                 let session = peer_session.clone();
                 let sem = semaphore.clone();
+                let evt_tx = session_tx.clone();
                 tokio::spawn(async move {
                     let _permit = match sem.acquire().await {
                         Ok(p) => p,
@@ -276,7 +279,7 @@ impl TorrentSession {
                         counter: &session.active_peers,
                     };
 
-                    if let Err(e) = session.handle_peer(addr, incoming).await {
+                    if let Err(e) = session.handle_peer(addr, incoming, evt_tx).await {
                         tracing::debug!("Peer {} error: {}", addr, e);
                     }
                 });
@@ -287,6 +290,20 @@ impl TorrentSession {
         tokio::spawn(async move {
             stats_session.stats_loop().await;
         });
+
+        if self.config.webseed_enabled && !self.meta.url_list.is_empty() && !self.meta.is_private {
+            let webseed_source = crate::webseed::WebseedSource {
+                meta: Arc::new(self.meta.clone()),
+                piece_manager: self.piece_manager.clone(),
+                storage: self.storage.clone(),
+                stats: self.stats.clone(),
+                total_downloaded: self.total_downloaded.clone(),
+                cancel: self.cancel_token.clone(),
+            };
+            tokio::spawn(async move {
+                webseed_source.run().await;
+            });
+        }
 
         let choke_session = self.clone();
         tokio::spawn(async move {
@@ -458,7 +475,12 @@ impl TorrentSession {
         }
     }
 
-    async fn handle_peer(&self, addr: SocketAddrV4, incoming: Option<TcpStream>) -> Result<()> {
+    async fn handle_peer(
+        &self,
+        addr: SocketAddrV4,
+        incoming: Option<TcpStream>,
+        peer_event_tx: mpsc::Sender<PeerEvent>,
+    ) -> Result<()> {
         let mut conn = if let Some(stream) = incoming {
             PeerConnection::accept(stream, addr, &self.info_hash, &self.peer_id).await?
         } else {
@@ -470,6 +492,11 @@ impl TorrentSession {
 
         conn.send_message(&PeerMessage::Interested).await?;
         conn.am_interested = true;
+
+        // BEP-10 extended handshake. Must be sent before any other extended
+        // message. We advertise ut_pex (id=1).
+        let hs = PeerMessage::build_extended_handshake_payload(self.config.pipeline_depth as u32);
+        conn.send_message(&PeerMessage::Extended { id: 0, payload: hs }).await?;
 
         self.peer_choke_stats.lock().insert(
             addr,
@@ -489,7 +516,9 @@ impl TorrentSession {
 
         let mut keepalive_timer = Instant::now();
         let mut last_pex_send = Instant::now();
+        let mut last_pex_drain = Instant::now();
         let mut known_peers: Vec<SocketAddrV4> = Vec::new();
+        let mut already_dialed: HashSet<SocketAddrV4> = HashSet::new();
 
         loop {
             if self.cancel_token.is_cancelled() || self.paused.load(Ordering::Relaxed) {
@@ -605,6 +634,30 @@ impl TorrentSession {
                 last_pex_send = Instant::now();
             }
 
+            // Periodically flush PEX-discovered peers into the connection
+            // pipeline. Without this, retorrent learns about hundreds of
+            // peers via PEX and never actually connects to any of them —
+            // a much bigger hit than it sounds, because qBittorrent uses
+            // PEX peers as its primary source after the first handshake.
+            if self.config.pex_enabled
+                && last_pex_drain.elapsed() > Duration::from_secs(15)
+                && !known_peers.is_empty()
+            {
+                let to_dial: Vec<SocketAddrV4> = known_peers
+                    .iter()
+                    .filter(|p| **p != conn.addr && !already_dialed.contains(*p))
+                    .take(20)
+                    .cloned()
+                    .collect();
+                for p in &to_dial {
+                    already_dialed.insert(*p);
+                }
+                if !to_dial.is_empty() {
+                    let _ = peer_event_tx.send(PeerEvent::AddPeers(to_dial)).await;
+                }
+                last_pex_drain = Instant::now();
+            }
+
             let msg = match tokio::time::timeout(Duration::from_secs(10), conn.recv_message()).await
             {
                 Ok(Ok(msg)) => msg,
@@ -664,7 +717,18 @@ impl TorrentSession {
                     }
                     conn.bitfield = bf.clone();
                 }
-                PeerMessage::Extended { id: 1, payload } => {
+                PeerMessage::Extended { id: 0, payload } => {
+                    // BEP-10 extended handshake from the peer. Extract
+                    // their `ut_pex` id; default to 1 if missing because
+                    // that's what every mainstream client uses and the
+                    // de-facto fallback.
+                    if let Some(pex_id) = PeerMessage::parse_extended_handshake(&payload) {
+                        conn.peer_pex_id = Some(pex_id);
+                    }
+                }
+                PeerMessage::Extended { id, payload } => {
+                    let pex_id = conn.peer_pex_id.unwrap_or(1);
+                    if id != pex_id { continue; }
                     let (added, _dropped) = PeerMessage::parse_pex_payload(&payload);
                     for peer in added {
                         if peer != conn.addr && !known_peers.contains(&peer) {

@@ -37,6 +37,35 @@ pub enum PeerMessage {
 }
 
 impl PeerMessage {
+    /// Build the BEP-10 extended-handshake payload.
+    pub fn build_extended_handshake_payload(reqq: u32) -> Vec<u8> {
+        use crate::bencode::{BencodeParser, BencodeValue};
+        use std::collections::BTreeMap;
+
+        let mut m = BTreeMap::new();
+        m.insert("ut_pex".to_string(), BencodeValue::Integer(1));
+        let mut top = BTreeMap::new();
+        top.insert("m".to_string(), BencodeValue::Dict(m));
+        top.insert(
+            "v".to_string(),
+            BencodeValue::ByteString(b"retorrent-0.1.0".to_vec()),
+        );
+        top.insert("reqq".to_string(), BencodeValue::Integer(reqq as i64));
+        BencodeParser::encode(&BencodeValue::Dict(top))
+    }
+
+    /// Parse the peer's extended handshake. Returns their `ut_pex` extension
+    /// id if they advertise it.
+    pub fn parse_extended_handshake(payload: &[u8]) -> Option<u8> {
+        use crate::bencode::BencodeParser;
+        let decoded = BencodeParser::parse(payload).ok()?;
+        let dict = decoded.as_dict()?;
+        let m = dict.get("m")?.as_dict()?;
+        m.get("ut_pex")
+            .and_then(|v| v.as_integer())
+            .map(|i| i as u8)
+    }
+
     pub fn build_pex_payload(added: &[SocketAddrV4], dropped: &[SocketAddrV4]) -> Vec<u8> {
         use crate::bencode::{BencodeParser, BencodeValue};
         use std::collections::BTreeMap;
@@ -286,6 +315,11 @@ pub struct PeerConnection {
     pub peer_interested: bool,
     pub bitfield: Vec<u8>,
     pub addr: std::net::SocketAddrV4,
+    /// Extension id the peer assigned to its `ut_pex` extension, learned
+    /// from the BEP-10 extended handshake. `None` until the handshake
+    /// arrives. BEP-10 lets us default to 1 if a peer sends PEX before
+    /// its handshake, which is what most peers do in practice.
+    pub peer_pex_id: Option<u8>,
 }
 
 impl PeerConnection {
@@ -330,6 +364,7 @@ impl PeerConnection {
             peer_interested: false,
             bitfield: Vec::new(),
             addr,
+            peer_pex_id: None,
         }
     }
 
@@ -477,5 +512,29 @@ impl PeerConnection {
             self.bitfield.push(0);
         }
         self.bitfield[byte_index] |= 1 << bit_offset;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn extended_handshake_roundtrip() {
+        let payload = PeerMessage::build_extended_handshake_payload(64);
+        let pex_id = PeerMessage::parse_extended_handshake(&payload);
+        assert_eq!(pex_id, Some(1), "we should advertise ut_pex at id 1");
+    }
+
+    #[test]
+    fn extended_handshake_missing_ut_pex() {
+        use crate::bencode::{BencodeParser, BencodeValue};
+        use std::collections::BTreeMap;
+        let mut m = BTreeMap::new();
+        m.insert("ut_metadata".to_string(), BencodeValue::Integer(2));
+        let mut top = BTreeMap::new();
+        top.insert("m".to_string(), BencodeValue::Dict(m));
+        let payload = BencodeParser::encode(&BencodeValue::Dict(top));
+        assert_eq!(PeerMessage::parse_extended_handshake(&payload), None);
     }
 }
