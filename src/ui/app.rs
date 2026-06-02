@@ -1436,6 +1436,10 @@ fn settings_dialog_view(
                             let c = config.clone();
                             Rc::new(move |v| { let mut nc = c.get(); nc.dht_enabled = v; c.set(nc); })
                         }),
+                        ("UPnP", cfg.upnp_enabled, {
+                            let c = config.clone();
+                            Rc::new(move |v| { let mut nc = c.get(); nc.upnp_enabled = v; c.set(nc); })
+                        }),
                         ("PEX", cfg.pex_enabled, {
                             let c = config.clone();
                             Rc::new(move |v| { let mut nc = c.get(); nc.pex_enabled = v; c.set(nc); })

@@ -1,6 +1,7 @@
 mod bencode;
 mod config;
 mod dht;
+mod nat;
 mod engine;
 mod error;
 mod metainfo;

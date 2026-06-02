@@ -6,6 +6,7 @@ use crate::network::TorrentSession;
 use crate::types::*;
 use dashmap::DashMap;
 use std::sync::Arc;
+use tokio_util::sync::CancellationToken;
 
 #[derive(Clone)]
 pub struct TorrentEngine {
@@ -13,6 +14,7 @@ pub struct TorrentEngine {
     pub peer_id: PeerId,
     pub sessions: Arc<DashMap<InfoHash, Arc<TorrentSession>>>,
     pub dht: Option<Arc<DhtNode>>,
+    pub cancellation_token: CancellationToken,
 }
 
 impl TorrentEngine {
@@ -41,7 +43,14 @@ impl TorrentEngine {
             peer_id: PeerId::generate(),
             sessions: Arc::new(DashMap::new()),
             dht,
+            cancellation_token: CancellationToken::new(),
         };
+
+        if engine.config.upnp_enabled {
+            let cancel = engine.cancellation_token.clone();
+            let port = engine.config.listen_port;
+            tokio::spawn(async move { crate::nat::run(port, cancel).await });
+        }
 
         if engine.config.auto_resume {
             engine.load_resume_data();
