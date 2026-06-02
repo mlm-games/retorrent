@@ -83,6 +83,16 @@ impl PeerStore {
             .collect()
     }
 
+    /// Generate a fresh token for a node that just queried us for peers.
+    ///
+    /// **Tokens are intentionally ephemeral.** Each token is 4 random bytes
+    /// stored only in this in-memory list, valid for as long as we keep it
+    /// around (and dropped when the list overflows at `max_remembered_tokens`).
+    /// They are not persisted, not derived from any long-lived key, and a
+    /// restart invalidates all outstanding tokens. This is correct: announce_peer
+    /// must be sent within seconds of get_peers, and the spec does not require
+    /// any cross-restart continuity. Rotating tokens on restart prevents stale
+    /// tokens from being usable if a node's state is exfiltrated.
     pub fn gen_token_for(&self, node_id: InfoHash, addr: SocketAddr) -> [u8; 4] {
         let mut token = [0u8; 4];
         rand::rng().fill_bytes(&mut token);

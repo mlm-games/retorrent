@@ -1,3 +1,4 @@
+mod bep42;
 mod error;
 mod node;
 mod peer_store;

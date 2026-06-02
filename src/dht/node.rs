@@ -1,7 +1,7 @@
 use std::cmp::Reverse;
-use std::collections::VecDeque;
-use std::net::{SocketAddr, SocketAddrV4, SocketAddrV6};
-use std::sync::atomic::{AtomicU16, Ordering};
+use std::collections::{HashMap, HashSet, VecDeque};
+use std::net::{IpAddr, SocketAddr, SocketAddrV4, SocketAddrV6};
+use std::sync::atomic::{AtomicU16, AtomicU32, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
@@ -90,6 +90,103 @@ impl RateLimiter {
     }
 }
 
+const PER_IP_LIMIT_PER_SEC: u32 = 50;
+const PER_IP_BURST: u32 = 100;
+const EXTERNAL_IP_VOTES: u32 = 3;
+const SELF_LOOKUP_INTERVAL: Duration = Duration::from_secs(30 * 60);
+const PER_IP_GC_INTERVAL: Duration = Duration::from_secs(5 * 60);
+
+struct PerIpRateLimiter {
+    state: DashMap<IpAddr, PerIpState>,
+}
+
+struct PerIpState {
+    tokens: AtomicU32,
+    last_refill_ns: parking_lot::Mutex<u64>,
+}
+
+impl PerIpRateLimiter {
+    fn new() -> Self { Self { state: DashMap::new() } }
+
+    fn allow(&self, addr: SocketAddr) -> bool {
+        let ip = addr.ip();
+        let entry = self.state.entry(ip).or_insert_with(|| PerIpState {
+            tokens: AtomicU32::new(PER_IP_BURST),
+            last_refill_ns: parking_lot::Mutex::new(now_ns()),
+        });
+        let mut last = entry.last_refill_ns.lock();
+        let now = now_ns();
+        let elapsed_ns = now.saturating_sub(*last);
+        let refill = (elapsed_ns / 1_000_000_000) as u32 * PER_IP_LIMIT_PER_SEC;
+        if refill > 0 {
+            entry.tokens.store(
+                entry.tokens.load(Ordering::Relaxed).saturating_add(refill).min(PER_IP_BURST),
+                Ordering::Relaxed,
+            );
+            *last = now;
+        }
+        let cur = entry.tokens.load(Ordering::Relaxed);
+        if cur > 0 {
+            entry.tokens.store(cur - 1, Ordering::Relaxed);
+            true
+        } else {
+            false
+        }
+    }
+
+    fn gc(&self) {
+        // Drop entries that have refilled to burst cap, indicating idle senders.
+        let mut to_remove: Vec<IpAddr> = Vec::new();
+        for entry in self.state.iter() {
+            let cur = entry.value().tokens.load(Ordering::Relaxed);
+            let last = *entry.value().last_refill_ns.lock();
+            if cur >= PER_IP_BURST && now_ns().saturating_sub(last) > 300_000_000_000 {
+                to_remove.push(*entry.key());
+            }
+        }
+        for k in to_remove {
+            self.state.remove(&k);
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::net::{Ipv4Addr, SocketAddrV4};
+
+    #[test]
+    fn per_ip_limiter_enforces_burst() {
+        let l = PerIpRateLimiter::new();
+        let addr = SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::new(1, 2, 3, 4), 6881));
+        // Burst starts at PER_IP_BURST, so the first PER_IP_BURST calls must succeed.
+        let mut allowed = 0;
+        for _ in 0..(PER_IP_BURST + 50) {
+            if l.allow(addr) { allowed += 1; }
+        }
+        assert!(allowed <= PER_IP_BURST, "should not exceed burst: got {}", allowed);
+        assert!(allowed >= PER_IP_BURST, "should allow at least burst: got {}", allowed);
+    }
+
+    #[test]
+    fn per_ip_limiter_isolates_addresses() {
+        let l = PerIpRateLimiter::new();
+        let a = SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::new(1, 2, 3, 4), 6881));
+        let b = SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::new(5, 6, 7, 8), 6881));
+        // Burn through a's bucket.
+        for _ in 0..(PER_IP_BURST + 50) { l.allow(a); }
+        // b should still be allowed.
+        assert!(l.allow(b));
+    }
+}
+
+fn now_ns() -> u64 {
+    use std::sync::OnceLock;
+    static EPOCH: OnceLock<Instant> = OnceLock::new();
+    let epoch = EPOCH.get_or_init(Instant::now);
+    Instant::now().saturating_duration_since(*epoch).as_nanos() as u64
+}
+
 #[derive(Debug, Serialize)]
 pub struct DhtStats {
     pub id: String,
@@ -143,6 +240,10 @@ pub struct DhtNode {
     pub(crate) peer_store: PeerStore,
     rate_limiter: RateLimiter,
     inbound_rate_limiter: RateLimiter,
+    per_ip_limiter: PerIpRateLimiter,
+    external_ip_votes: DashMap<std::net::IpAddr, AtomicU32>,
+    external_ip: parking_lot::RwLock<Option<std::net::IpAddr>>,
+    external_ip_voters: parking_lot::Mutex<HashMap<std::net::IpAddr, HashSet<SocketAddr>>>,
 }
 
 impl DhtNode {
@@ -167,6 +268,10 @@ impl DhtNode {
             peer_store,
             rate_limiter: RateLimiter::new(DHT_QUERIES_PER_SECOND),
             inbound_rate_limiter: RateLimiter::new(DHT_QUERIES_PER_SECOND * 2),
+            per_ip_limiter: PerIpRateLimiter::new(),
+            external_ip_votes: DashMap::new(),
+            external_ip: parking_lot::RwLock::new(None),
+            external_ip_voters: parking_lot::Mutex::new(HashMap::new()),
         }
     }
 
@@ -226,6 +331,42 @@ impl DhtNode {
         if addr.is_ipv4() { &self.routing_table_v4 } else { &self.routing_table_v6 }
     }
 
+    /// Record a voter's claim about our external IP. Promote the candidate to
+    /// `external_ip` once it's been confirmed by at least `EXTERNAL_IP_VOTES`
+    /// distinct voters.
+    fn note_external_ip(&self, claimed: IpAddr, voter: SocketAddr) {
+        // Ignore claims that look like private/loopback addresses — those are
+        // useless and can only come from a misconfigured node.
+        if claimed.is_loopback() || claimed.is_unspecified() { return; }
+        match claimed {
+            IpAddr::V4(v4) => {
+                if v4.is_private() || v4.is_link_local() { return; }
+            }
+            IpAddr::V6(v6) => {
+                let s = v6.segments();
+                if v6.is_multicast() { return; }
+                if (s[0] & 0xfe00) == 0xfc00 { return; } // unique local
+                if v6.segments()[0] == 0xfe80 { return; } // link-local
+            }
+        }
+        // Each voter can only count once per claimed IP; track that.
+        let mut voters = self.external_ip_voters.lock();
+        let entry = voters.entry(claimed).or_default();
+        entry.insert(voter);
+        let count = entry.len();
+        drop(voters);
+
+        if count as u32 >= EXTERNAL_IP_VOTES {
+            let mut cur = self.external_ip.write();
+            if cur.is_none() {
+                info!("discovered external IP {} ({} voters)", claimed, count);
+                *cur = Some(claimed);
+            }
+        }
+    }
+
+    pub fn external_ip(&self) -> Option<IpAddr> { *self.external_ip.read() }
+
     fn generate_compact_nodes(&self, target: InfoHash, table: &RoutingTable, want: protocol::Want) -> (Vec<u8>, Vec<u8>) {
         let mut nodes_v4 = Vec::new();
         let mut nodes_v6 = Vec::new();
@@ -272,6 +413,17 @@ impl DhtNode {
             };
             if let Some(rid) = responder_id {
                 self.table_for(addr).write().add_node(rid, addr);
+            }
+            // BEP-42: collect `ip` field for external-IP discovery (voting).
+            let ip_field = match &msg {
+                protocol::Message::PingResponse { ip, .. }
+                | protocol::Message::FindNodeResponse { ip, .. }
+                | protocol::Message::GetPeersResponse { ip, .. }
+                | protocol::Message::AnnouncePeerResponse { ip, .. } => *ip,
+                _ => None,
+            };
+            if let Some(claimed_sa) = ip_field {
+                self.note_external_ip(claimed_sa.ip(), addr);
             }
             let tid = msg.transaction_id();
             let tid_val = protocol::decode_transaction_id(tid).ok_or(Error::BadTransactionId)?;
@@ -401,6 +553,11 @@ impl RecursiveCallbacks for CallbacksGetPeers {
         };
         let min_distance = InfoHash::from_hex("0000ffffffffffffffffffffffffffffffffffff").unwrap();
         if req.info_hash.distance(&target) > min_distance { return; }
+        // BEP-42: do not store on nodes whose ID doesn't match their IP.
+        if !crate::dht::bep42::validate_node_id(&target.0, addr.ip()) {
+            debug!("skipping announce: BEP-42 validation failed for {}", addr);
+            return;
+        }
         let (tid, data) = req.dht.create_message(&Request::Announce {
             info_hash: req.info_hash,
             token,
@@ -778,7 +935,11 @@ impl DhtWorker {
                     Ok((size, addr)) => {
                         if size == 0 { continue; }
                         if !dht.inbound_rate_limiter.allow() {
-                            debug!("inbound rate limited from {}", addr);
+                            debug!("global inbound rate limited ({})", addr);
+                            continue;
+                        }
+                        if !dht.per_ip_limiter.allow(addr) {
+                            debug!("per-IP inbound rate limited ({})", addr);
                             continue;
                         }
                         if let Some(msg) = protocol::deserialize(&buf[..size]) {
@@ -827,6 +988,10 @@ impl DhtWorker {
         tokio::pin!(pinger_v6);
         let refresher_v6 = self.bucket_refresher(false);
         tokio::pin!(refresher_v6);
+        let self_lookup = self.self_lookup();
+        tokio::pin!(self_lookup);
+        let per_ip_gc = self.per_ip_gc();
+        tokio::pin!(per_ip_gc);
 
         let mut bootstrap_done = false;
         loop {
@@ -837,8 +1002,36 @@ impl DhtWorker {
                 e = &mut refresher_v4 => return Error::task_finished("bucket_refresher_v4", e),
                 e = &mut pinger_v6 => return Error::task_finished("pinger_v6", e),
                 e = &mut refresher_v6 => return Error::task_finished("bucket_refresher_v6", e),
+                e = &mut self_lookup => return Error::task_finished("self_lookup", e),
+                e = &mut per_ip_gc => return Error::task_finished("per_ip_gc", e),
                 e = &mut response_reader => return Error::task_finished("response_reader", e),
             }
+        }
+    }
+}
+
+impl DhtWorker {
+    /// Periodically issues a `find_node` for our own ID to refresh buckets
+    /// and confirm we are still reachable.
+    async fn self_lookup(&self) -> Result<()> {
+        let mut interval = tokio::time::interval(SELF_LOOKUP_INTERVAL);
+        interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+        loop {
+            interval.tick().await;
+            let table = self.dht.routing_table_v4.read().closest_nodes(self.dht.id, 8);
+            if !table.is_empty() {
+                let _ = RecursiveRequest::find_node_for_routing_table(self.dht.clone(), self.dht.id, table).await;
+            }
+        }
+    }
+
+    /// Periodically prunes the per-IP rate-limiter table to bound memory.
+    async fn per_ip_gc(&self) -> Result<()> {
+        let mut interval = tokio::time::interval(PER_IP_GC_INTERVAL);
+        interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+        loop {
+            interval.tick().await;
+            self.dht.per_ip_limiter.gc();
         }
     }
 }

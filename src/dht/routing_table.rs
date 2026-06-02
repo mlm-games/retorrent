@@ -470,6 +470,16 @@ impl RoutingTable {
         result
     }
 
+    /// Returns up to `k` closest good-or-questionable node addresses to `target`.
+    pub fn closest_nodes(&self, target: InfoHash, k: usize) -> Vec<SocketAddr> {
+        self.sorted_by_distance_from(target, Instant::now())
+            .into_iter()
+            .filter(|n| !matches!(n.status(Instant::now()), NodeStatus::Bad))
+            .map(|n| n.addr)
+            .take(k)
+            .collect()
+    }
+
     pub fn iter_buckets(&self) -> impl Iterator<Item = BucketTreeIteratorItem<'_>> + '_ {
         self.buckets.iter_leaves()
     }
