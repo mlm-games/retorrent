@@ -120,6 +120,7 @@ pub fn app(
     let filter_state: Rc<Signal<FilterState>> = remember(|| signal(FilterState::All));
     let search_query: Rc<Signal<String>> = remember(|| signal(String::new()));
     let magnet_input: Rc<Signal<String>> = remember(|| signal(String::new()));
+    let url_input: Rc<Signal<String>> = remember(|| signal(String::new()));
     let torrents: Rc<Signal<Vec<TorrentRow>>> = remember(|| signal(Vec::new()));
     let global_dl: Rc<Signal<u64>> = remember(|| signal(0));
     let global_ul: Rc<Signal<u64>> = remember(|| signal(0));
@@ -127,6 +128,7 @@ pub fn app(
 
     let overlay = remember(|| OverlayHandle::new());
     let magnet_state = remember(|| DialogState::new());
+    let url_state = remember(|| DialogState::new());
     let remove_state = remember(|| DialogState::new());
     let settings_state = remember(|| DialogState::new());
     let add_state = remember(|| DialogState::new());
@@ -312,6 +314,7 @@ pub fn app(
             all_torrents.clone(),
             selected.clone(),
             magnet_state.clone(),
+            url_state.clone(),
             remove_state.clone(),
             settings_state.clone(),
             global_dl.get(),
@@ -352,6 +355,14 @@ pub fn app(
                 magnet_input.clone(),
                 engine.clone(),
                 rt.clone(),
+            ),
+            url_dialog_view(
+                url_state.clone(),
+                (*overlay).clone(),
+                url_input.clone(),
+                engine.clone(),
+                rt.clone(),
+                (*pending_from_button).clone(),
             ),
             remove_dialog_view(
                 remove_state.clone(),
@@ -422,6 +433,7 @@ fn top_bar_view(
     torrents: Vec<TorrentRow>,
     selected: Rc<Signal<Option<InfoHash>>>,
     magnet_state: Rc<DialogState>,
+    url_state: Rc<DialogState>,
     remove_state: Rc<DialogState>,
     settings_state: Rc<DialogState>,
     global_dl: u64,
@@ -535,6 +547,25 @@ fn top_bar_view(
                     icon(Symbols::LINK, 18.0, th.on_surface),
                     Box(Modifier::new().width(6.0)),
                     Text("Magnet").size(13.0),
+                ))
+            },
+        ));
+
+        children.push(Box(Modifier::new().width(8.0)));
+
+        children.push(FilledTonalButton(
+            Modifier::new().height(40.0),
+            {
+                let s = url_state.clone();
+                move || {
+                    s.show();
+                }
+            },
+            || {
+                Row(Modifier::new().align_items(AlignItems::Center)).child((
+                    icon(Symbols::PUBLIC, 18.0, th.on_surface),
+                    Box(Modifier::new().width(6.0)),
+                    Text("URL").size(13.0),
                 ))
             },
         ));
@@ -1407,6 +1438,100 @@ fn magnet_dialog_view(
                         }
                     },
                     || Text("Add"),
+                ),
+            )),
+        )),
+    )
+}
+
+fn url_dialog_view(
+    state: Rc<DialogState>,
+    overlay: OverlayHandle,
+    url_input: Rc<Signal<String>>,
+    engine: Arc<TorrentEngine>,
+    rt: Arc<tokio::runtime::Runtime>,
+    pending_from_button: Arc<Mutex<Vec<PendingTorrent>>>,
+) -> View {
+    let th = theme();
+
+    Dialog(
+        state.clone(),
+        overlay,
+        Modifier::new(),
+        Column(Modifier::new().padding(24.0).min_width(400.0)).child((
+            Text("Add Torrent from URL").size(18.0).color(th.on_surface),
+            Box(Modifier::new().height(12.0)),
+            TextField(
+                "https://example.com/file.torrent",
+                url_input.get(),
+                Modifier::new().fill_max_width().height(60.0),
+                Some({
+                    let u = url_input.clone();
+                    move |v| u.set(v)
+                }),
+                None::<fn(String)>,
+            ),
+            Box(Modifier::new().height(16.0)),
+            Row(Modifier::new()
+                .align_items(AlignItems::Center)
+                .justify_content(JustifyContent::End))
+            .child((
+                TextButton(
+                    Modifier::new(),
+                    {
+                        let s = state.clone();
+                        let u = url_input.clone();
+                        move || {
+                            u.set(String::new());
+                            s.dismiss();
+                        }
+                    },
+                    || Text("Cancel"),
+                ),
+                Box(Modifier::new().width(8.0)),
+                FilledButton(
+                    Modifier::new(),
+                    {
+                        let s = state.clone();
+                        let u = url_input.clone();
+                        let engine = engine.clone();
+                        let pending_from_button = pending_from_button.clone();
+                        move || {
+                            let url = u.get().trim().to_string();
+                            if !url.is_empty() {
+                                let engine = engine.clone();
+                                let pfb = pending_from_button.clone();
+                                std::thread::spawn(move || {
+                                    match reqwest::blocking::get(&url) {
+                                        Ok(resp) => match resp.bytes() {
+                                            Ok(bytes) => {
+                                                let data = bytes.to_vec();
+                                                match MetaInfo::from_bytes(&data) {
+                                                    Ok(meta) => {
+                                                        if let Ok(mut p) = pfb.lock() {
+                                                            p.push(PendingTorrent {
+                                                                name: meta.name,
+                                                                total_size: meta.total_size,
+                                                                files: meta.files,
+                                                                data,
+                                                                suggested_dir: engine.config.download_dir.clone(),
+                                                            });
+                                                        }
+                                                    }
+                                                    Err(e) => tracing::error!("Failed to parse torrent from URL: {}", e),
+                                                }
+                                            }
+                                            Err(e) => tracing::error!("Failed to read response body: {}", e),
+                                        },
+                                        Err(e) => tracing::error!("Failed to fetch URL: {}", e),
+                                    }
+                                });
+                            }
+                            u.set(String::new());
+                            s.dismiss();
+                        }
+                    },
+                    || Text("Fetch"),
                 ),
             )),
         )),
