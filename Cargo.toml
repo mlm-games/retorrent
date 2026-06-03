@@ -4,6 +4,32 @@ version = "0.1.0"
 edition = "2024"
 resolver = "3"
 
+[lib]
+name = "retorrent"
+crate-type = ["cdylib", "rlib"]
+
+[features]
+default = []
+desktop-bin = []
+
+[[bin]]
+name = "retorrent"
+path = "src/main.rs"
+required-features = ["desktop-bin"]
+
+[package.metadata.android]
+package = "dev.mlm.retorrent"
+apk_name = "retorrent"
+build_targets = ["aarch64-linux-android"]
+split_per_abi = true
+
+[package.metadata.android.application]
+label = "Retorrent"
+
+[package.metadata.android.sdk]
+min_sdk_version = 26
+target_sdk_version = 35
+
 [dependencies]
 tokio = { version = "1", features = ["full"] }
 futures = "0.3"
@@ -52,3 +78,22 @@ rlobkit-dialogs = { path = "../rlobkit/rlobkit-dialogs" }
 repose-platform = { path = "../repose/crates/repose-platform", features = [
     "desktop",
 ] }
+
+[target.'cfg(target_os = "android")'.dependencies]
+repose-platform = { path = "../repose/crates/repose-platform", features = [
+    "android",
+] }
+android_logger = "0.15"
+winit = "0.30"
+log = "0.4"
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+wasm-bindgen = "0.2"
+console_error_panic_hook = "0.1"
+console_log = "1.0"
+log = "0.4"
+getrandom = { version = "0.3", features = ["wasm_js"] }
+repose-platform = { path = "../repose/crates/repose-platform", features = [
+    "web",
+] }
+winit = { version = "0.30", features = ["rwh_05"] }
