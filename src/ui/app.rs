@@ -621,9 +621,11 @@ fn filter_search_panel(
             None::<fn(String)>,
         ),
         Box(Modifier::new().height(10.0)),
-        Row(Modifier::new()
-            .fill_max_width()
-            .align_items(AlignItems::Center))
+        FlowRow(
+            Modifier::new()
+                .fill_max_width()
+                .align_items(AlignItems::Center),
+        )
         .child(
             filters
                 .into_iter()
