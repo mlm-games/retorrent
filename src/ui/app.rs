@@ -19,6 +19,7 @@ use crate::config::Config;
 use crate::engine::TorrentEngine;
 use crate::metainfo::{FileInfo, MetaInfo};
 use crate::network::TorrentStats;
+#[cfg(any(target_os = "linux", target_os = "windows", target_os = "macos"))]
 use crate::tray::{AppTray, TrayCommand};
 use crate::types::*;
 use crate::ui::components;
@@ -108,8 +109,8 @@ pub fn app(
     _sched: &mut Scheduler,
     engine: Arc<TorrentEngine>,
     rt: Arc<tokio::runtime::Runtime>,
-    tray: Arc<AppTray>,
-    tray_cmd_rx: Arc<Mutex<mpsc::Receiver<TrayCommand>>>,
+    #[cfg(any(target_os = "linux", target_os = "windows", target_os = "macos"))] tray: Arc<AppTray>,
+    #[cfg(any(target_os = "linux", target_os = "windows", target_os = "macos"))] tray_cmd_rx: Arc<Mutex<mpsc::Receiver<TrayCommand>>>,
     pending_torrents: Arc<Mutex<Vec<PendingTorrent>>>,
 ) -> View {
     set_theme_default(theme::dark_theme());
@@ -171,7 +172,7 @@ pub fn app(
         }
     }
 
-    // Process tray commands
+    #[cfg(any(target_os = "linux", target_os = "windows", target_os = "macos"))]
     if let Ok(guard) = tray_cmd_rx.lock() {
         while let Ok(cmd) = guard.try_recv() {
             match cmd {
@@ -259,7 +260,7 @@ pub fn app(
         last_refresh.set(now);
     }
 
-    // Update tray tooltip
+    #[cfg(any(target_os = "linux", target_os = "windows", target_os = "macos"))]
     {
         let rows = torrents.get();
         let active = rows
@@ -495,34 +496,102 @@ fn top_bar_view(
             {
                 let pending_from_button = pending_from_button.clone();
                 let engine = engine.clone();
+                let rt = rt.clone();
                 move || {
                     let pending_from_button = pending_from_button.clone();
                     let engine = engine.clone();
+                    let rt = rt.clone();
                     std::thread::spawn(move || {
-                        if let Some(path) = rlobkit_dialogs::blocking_open_file(
-                            "Select Torrent File",
-                            &["torrent"],
-                        )
+                        #[cfg(any(
+                            target_os = "linux",
+                            target_os = "windows",
+                            target_os = "macos"
+                        ))]
                         {
-                            match std::fs::read(&path) {
-                                Ok(data) => match MetaInfo::from_bytes(&data) {
-                                    Ok(meta) => {
-                                        let suggested_dir = engine.config.download_dir.clone();
-                                        if let Ok(mut p) = pending_from_button.lock() {
-                                            p.push(PendingTorrent {
-                                                name: meta.name,
-                                                total_size: meta.total_size,
-                                                files: meta.files,
-                                                data,
-                                                suggested_dir,
-                                            });
+                            if let Some(path) = rlobkit_dialogs::blocking_open_file(
+                                "Select Torrent File",
+                                &["torrent"],
+                            ) {
+                                match std::fs::read(&path) {
+                                    Ok(data) => match MetaInfo::from_bytes(&data) {
+                                        Ok(meta) => {
+                                            let suggested_dir =
+                                                engine.config.download_dir.clone();
+                                            if let Ok(mut p) = pending_from_button.lock() {
+                                                p.push(PendingTorrent {
+                                                    name: meta.name,
+                                                    total_size: meta.total_size,
+                                                    files: meta.files,
+                                                    data,
+                                                    suggested_dir,
+                                                });
+                                            }
                                         }
-                                    }
-                                    Err(e) => tracing::error!("Failed to parse torrent: {}", e),
-                                },
-                                Err(e) => tracing::error!("Failed to read file: {}", e),
+                                        Err(e) => {
+                                            tracing::error!("Failed to parse torrent: {}", e)
+                                        }
+                                    },
+                                    Err(e) => tracing::error!("Failed to read file: {}", e),
+                                }
                             }
                         }
+                        #[cfg(target_os = "android")]
+                        rt.block_on(async {
+                            use rlobkit_dialogs::picker::{OpenFileOptions, RlobKit};
+                            use rlobkit_dialogs::RlobKitMode;
+                            match RlobKit::open_file_picker(OpenFileOptions {
+                                title: Some("Select Torrent File".into()),
+                                mode: RlobKitMode::Single,
+                                ..Default::default()
+                            })
+                            .await
+                            {
+                                Ok(Some(files)) => {
+                                    for file in files {
+                                        let temp_dir = std::env::temp_dir();
+                                        let temp_path =
+                                            temp_dir.join(format!("torrent_{}", file.name()));
+                                        if RlobKit::read_file_to_path(&file, &temp_path)
+                                            .is_ok()
+                                        {
+                                            match std::fs::read(&temp_path) {
+                                                Ok(data) => {
+                                                    match MetaInfo::from_bytes(&data) {
+                                                        Ok(meta) => {
+                                                            if let Ok(mut p) =
+                                                                pending_from_button.lock()
+                                                            {
+                                                                p.push(PendingTorrent {
+                                                                    name: meta.name,
+                                                                    total_size: meta.total_size,
+                                                                    files: meta.files,
+                                                                    data,
+                                                                    suggested_dir: engine
+                                                                        .config
+                                                                        .download_dir
+                                                                        .clone(),
+                                                                });
+                                                            }
+                                                        }
+                                                        Err(e) => tracing::error!(
+                                                            "Failed to parse torrent: {}",
+                                                            e
+                                                        ),
+                                                    }
+                                                }
+                                                Err(e) => tracing::error!(
+                                                    "Failed to read temp file: {}",
+                                                    e
+                                                ),
+                                            }
+                                            let _ = std::fs::remove_file(&temp_path);
+                                        }
+                                    }
+                                }
+                                Ok(None) => {}
+                                Err(e) => tracing::error!("File picker error: {}", e),
+                            }
+                        });
                     });
                 }
             },
@@ -1857,10 +1926,41 @@ fn add_torrent_dialog_view(
                 move || {
                     let pending = pending.clone();
                     std::thread::spawn(move || {
-                        if let Some(folder) = rlobkit_dialogs::blocking_pick_directory("Select Download Directory") {
+                        #[cfg(any(
+                            target_os = "linux",
+                            target_os = "windows",
+                            target_os = "macos"
+                        ))]
+                        if let Some(folder) =
+                            rlobkit_dialogs::blocking_pick_directory("Select Download Directory")
+                        {
                             if let Ok(mut p) = pending.lock() {
                                 *p = Some(folder);
                             }
+                        }
+                        #[cfg(target_os = "android")]
+                        {
+                            use rlobkit_dialogs::picker::{OpenDirectoryOptions, RlobKit};
+                            let local_rt = tokio::runtime::Builder::new_current_thread()
+                                .enable_all()
+                                .build()
+                                .expect("Failed to build local runtime");
+                            local_rt.block_on(async {
+                                match RlobKit::open_directory_picker(OpenDirectoryOptions {
+                                    title: Some("Select Download Directory".into()),
+                                    initial_directory: None,
+                                })
+                                .await
+                                {
+                                    Ok(Some(dir)) => {
+                                        if let Ok(mut p) = pending.lock() {
+                                            *p = Some(dir.path().to_path_buf());
+                                        }
+                                    }
+                                    Ok(None) => {}
+                                    Err(e) => tracing::error!("Directory picker error: {}", e),
+                                }
+                            });
                         }
                     });
                 }

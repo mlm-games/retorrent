@@ -13,11 +13,18 @@ mod tracker;
 mod types;
 mod webseed;
 
+#[cfg(any(
+    target_os = "linux",
+    target_os = "windows",
+    target_os = "macos",
+    target_os = "android"
+))]
+mod ui;
+
 #[cfg(any(target_os = "linux", target_os = "windows", target_os = "macos"))]
 mod tray;
 
-#[cfg(any(target_os = "linux", target_os = "windows", target_os = "macos"))]
-mod ui;
+
 
 use anyhow::Result;
 use config::Config;
@@ -25,7 +32,6 @@ use engine::TorrentEngine;
 use metainfo::MetaInfo;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
-use tracing_subscriber::{EnvFilter, fmt};
 
 #[derive(Clone)]
 pub struct PendingTorrent {
@@ -85,6 +91,7 @@ pub fn run_headless(engine: Arc<TorrentEngine>, rt: Arc<tokio::runtime::Runtime>
 #[cfg(feature = "desktop-bin")]
 pub fn run_desktop_main() -> Result<()> {
     use std::sync::mpsc;
+    use tracing_subscriber::{EnvFilter, fmt};
 
     fmt()
         .with_env_filter(
@@ -201,6 +208,40 @@ pub fn run_desktop_main() -> Result<()> {
 }
 
 #[cfg(target_os = "android")]
+unsafe fn android_files_dir() -> Option<PathBuf> {
+    use jni::objects::{JObject, JString};
+
+    let ctx = ndk_context::android_context();
+    if ctx.context().is_null() {
+        return None;
+    }
+    let vm = jni::JavaVM::from_raw(ctx.vm().cast());
+    vm.attach_current_thread::<_, _, jni::errors::Error>(|env| unsafe {
+        let context = JObject::from_raw(env, ctx.context().cast());
+        let file_obj = env
+            .call_method(
+                &context,
+                jni::jni_str!("getFilesDir"),
+                jni::jni_sig!("()Ljava/io/File;"),
+                &[],
+            )?
+            .l()?;
+        let jpath = env
+            .call_method(
+                &file_obj,
+                jni::jni_str!("getAbsolutePath"),
+                jni::jni_sig!("()Ljava/lang/String;"),
+                &[],
+            )?
+            .l()?;
+        let jstr: JString = JString::cast_local(env, jpath)?;
+        let s: String = jstr.mutf8_chars(env)?.to_string();
+        Ok::<_, jni::errors::Error>(PathBuf::from(s))
+    })
+    .ok()
+}
+
+#[cfg(target_os = "android")]
 #[unsafe(no_mangle)]
 pub extern "C" fn android_main(android_app: winit::platform::android::activity::AndroidApp) {
     android_logger::init_once(
@@ -210,6 +251,15 @@ pub extern "C" fn android_main(android_app: winit::platform::android::activity::
     );
     log::info!("Retorrent starting on Android");
 
+    rlobkit_dialogs::init();
+
+    let files_dir = unsafe { android_files_dir() }
+        .or_else(dirs::data_dir)
+        .unwrap_or_else(|| PathBuf::from("/sdcard"));
+
+    let download_dir = files_dir.join("Retorrent/downloads");
+    let _ = std::fs::create_dir_all(&download_dir);
+
     let rt = Arc::new(
         tokio::runtime::Builder::new_multi_thread()
             .enable_all()
@@ -218,29 +268,16 @@ pub extern "C" fn android_main(android_app: winit::platform::android::activity::
             .expect("Failed to build Tokio runtime"),
     );
 
-    let config = Config::load_or_default();
+    let mut config = Config::load_or_default();
+    config.download_dir = download_dir;
     let engine = rt.block_on(async { Arc::new(TorrentEngine::new(config).await) });
+
+    let pending: Arc<Mutex<Vec<PendingTorrent>>> = Arc::new(Mutex::new(Vec::new()));
 
     use repose_platform::android::run_android_app;
 
-    let _ = run_android_app(android_app, |_sched, _rc| {
-        use repose_core::prelude::*;
-        use repose_ui::*;
-
-        Surface(
-            Modifier::new()
-                .fill_max_size()
-                .background(theme().background),
-            Column(Modifier::new()
-                .fill_max_size()
-                .align_items(AlignItems::Center)
-                .justify_content(JustifyContent::Center))
-            .child((
-                Text("Retorrent").size(24.0),
-                Box(Modifier::new().height(8.0)),
-                Text("Running on Android").size(14.0),
-            )),
-        )
+    let _ = run_android_app(android_app, move |sched, _rc| {
+        ui::app::app(sched, engine.clone(), rt.clone(), pending.clone())
     });
 }
 

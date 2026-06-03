@@ -25,6 +25,7 @@ split_per_abi = true
 
 [package.metadata.android.application]
 label = "Retorrent"
+fullscreen = true
 
 [package.metadata.android.sdk]
 min_sdk_version = 26
@@ -86,6 +87,9 @@ repose-platform = { path = "../repose/crates/repose-platform", features = [
 android_logger = "0.15"
 winit = "0.30"
 log = "0.4"
+rlobkit-dialogs = { path = "../rlobkit/rlobkit-dialogs" }
+jni = "0.22.4"
+ndk-context = "0.1"
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 wasm-bindgen = "0.2"
