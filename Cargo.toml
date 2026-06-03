@@ -48,7 +48,7 @@ igd = "0.12"
 [target.'cfg(any(target_os = "linux", target_os = "windows", target_os = "macos"))'.dependencies]
 gtk = "0.18"
 tray-icon = "0.24"
-rfd = "0.17"
+rlobkit-dialogs = { path = "../rlobkit/rlobkit-dialogs" }
 repose-platform = { path = "../repose/crates/repose-platform", features = [
     "desktop",
 ] }

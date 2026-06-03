@@ -499,9 +499,10 @@ fn top_bar_view(
                     let pending_from_button = pending_from_button.clone();
                     let engine = engine.clone();
                     std::thread::spawn(move || {
-                        if let Some(path) = rfd::FileDialog::new()
-                            .add_filter("Torrent Files", &["torrent"])
-                            .pick_file()
+                        if let Some(path) = rlobkit_dialogs::blocking_open_file(
+                            "Select Torrent File",
+                            &["torrent"],
+                        )
                         {
                             match std::fs::read(&path) {
                                 Ok(data) => match MetaInfo::from_bytes(&data) {
@@ -1856,7 +1857,7 @@ fn add_torrent_dialog_view(
                 move || {
                     let pending = pending.clone();
                     std::thread::spawn(move || {
-                        if let Some(folder) = rfd::FileDialog::new().pick_folder() {
+                        if let Some(folder) = rlobkit_dialogs::blocking_pick_directory("Select Download Directory") {
                             if let Ok(mut p) = pending.lock() {
                                 *p = Some(folder);
                             }
