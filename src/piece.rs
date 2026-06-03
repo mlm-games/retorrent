@@ -310,6 +310,11 @@ impl PieceManager {
         self.in_progress.lock().contains_key(&index)
     }
 
+    pub fn piece_is_skipped(&self, index: u32) -> bool {
+        let pp = self.piece_priorities.lock();
+        (index as usize) < pp.len() && pp[index as usize] == FilePriority::Skip
+    }
+
     pub fn mark_piece_complete(&self, index: u32) {
         self.in_progress.lock().remove(&index);
         self.have.lock()[index as usize] = true;

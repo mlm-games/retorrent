@@ -101,6 +101,9 @@ impl WebseedSource {
                 if self.piece_manager.piece_in_progress(idx) {
                     continue;
                 }
+                if self.piece_manager.piece_is_skipped(idx) {
+                    continue;
+                }
                 chosen = Some(idx);
                 next.store(idx + 1, std::sync::atomic::Ordering::Relaxed);
                 break;

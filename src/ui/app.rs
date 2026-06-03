@@ -53,9 +53,11 @@ struct TorrentRow {
     total_size: u64,
     have_pieces: Vec<bool>,
     num_pieces: u32,
+    piece_length: u64,
     files: Vec<crate::metainfo::FileInfo>,
     trackers: Vec<String>,
     file_priorities: Vec<FilePriority>,
+    display_progress: f32,
 }
 
 fn matches_filter(t: &TorrentRow, filter: FilterState) -> bool {
@@ -210,6 +212,30 @@ pub fn app(
                         }
                     }
                 }
+                let pl = session.meta.piece_length;
+                let display_progress = {
+                    let mut total = 0u32;
+                    let mut done = 0u32;
+                    for (i, fp) in priorities.iter().enumerate() {
+                        if *fp == FilePriority::Skip {
+                            continue;
+                        }
+                        if i >= files.len() {
+                            break;
+                        }
+                        let f = &files[i];
+                        let first = (f.offset / pl) as usize;
+                        let last = ((f.offset + f.length - 1) / pl) as usize;
+                        for p in first..=last {
+                            total += 1;
+                            if p < have.len() && have[p] {
+                                done += 1;
+                            }
+                        }
+                    }
+                    if total > 0 { done as f32 / total as f32 } else { 0.0 }
+                };
+
                 rows.push(TorrentRow {
                     info_hash: hash,
                     name: session.meta.name.clone(),
@@ -217,9 +243,11 @@ pub fn app(
                     total_size: session.meta.total_size,
                     have_pieces: have,
                     num_pieces: session.meta.num_pieces(),
+                    piece_length: pl,
                     files,
                     trackers,
                     file_priorities: priorities,
+                    display_progress,
                 });
             }
         }
@@ -768,7 +796,7 @@ fn torrent_card_view(
                         .color(th.on_surface_variant),
                 )),
                 Box(Modifier::new().height(8.0)),
-                components::progress_bar_view(torrent.stats.progress, torrent.stats.state, 392.0),
+                components::progress_bar_view(torrent.display_progress, torrent.stats.state, 392.0),
                 Box(Modifier::new().height(8.0)),
                 Row(Modifier::new()
                     .fill_max_width()
@@ -911,7 +939,7 @@ fn details_header(torrent: &TorrentRow) -> View {
             ),
         )),
         Box(Modifier::new().height(14.0)),
-        components::progress_bar_view(torrent.stats.progress, torrent.stats.state, 640.0),
+        components::progress_bar_view(torrent.display_progress, torrent.stats.state, 640.0),
     ))
 }
 
@@ -1014,7 +1042,7 @@ fn general_tab_view_v2(torrent: &TorrentRow) -> View {
                     ("Total Size", format_bytes(torrent.total_size)),
                     (
                         "Progress",
-                        format!("{:.2}%", torrent.stats.progress * 100.0),
+                        format!("{:.2}%", torrent.display_progress * 100.0),
                     ),
                     (
                         "Ratio",
@@ -1169,7 +1197,17 @@ fn files_tab_view(torrent: &TorrentRow, _info_hash: InfoHash, _engine: Arc<Torre
                     .get(fi)
                     .copied()
                     .unwrap_or(FilePriority::Normal);
-                let progress = torrent.stats.progress.clamp(0.0, 1.0);
+                let file_progress = if torrent.piece_length > 0 {
+                    let first = (file.offset / torrent.piece_length) as usize;
+                    let last = ((file.offset + file.length - 1) / torrent.piece_length) as usize;
+                    let total = last.saturating_sub(first) + 1;
+                    let done = (first..=last)
+                        .filter(|&i| i < torrent.have_pieces.len() && torrent.have_pieces[i])
+                        .count();
+                    done as f32 / total as f32
+                } else {
+                    0.0
+                };
 
                 views.push(
                     Row(Modifier::new()
@@ -1185,7 +1223,7 @@ fn files_tab_view(torrent: &TorrentRow, _info_hash: InfoHash, _engine: Arc<Torre
                             .size(11.0)
                             .color(th.on_surface)
                             .modifier(Modifier::new().width(80.0)),
-                        file_progress_view(progress, state),
+                        file_progress_view(file_progress, state),
                         Text(current_prio.to_string())
                             .size(11.0)
                             .color(th.on_surface)
