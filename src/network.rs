@@ -74,6 +74,7 @@ impl TorrentSession {
         download_dir: std::path::PathBuf,
         peer_id: PeerId,
         config: Arc<Config>,
+        initial_priorities: Option<&[FilePriority]>,
     ) -> Result<Arc<Self>> {
         let piece_manager = Arc::new(PieceManager::new(
             meta.num_pieces(),
@@ -82,14 +83,27 @@ impl TorrentSession {
             meta.pieces.clone(),
         ));
 
+        let fp_vec = if let Some(p) = initial_priorities {
+            p.to_vec()
+        } else {
+            vec![FilePriority::Normal; meta.files.len()]
+        };
+
+        let file_priorities = Arc::new(Mutex::new(fp_vec));
+
         let storage = Arc::new(DiskStorage::new(
             download_dir,
             &meta,
             config.prealloc_files,
             config.cache_size_mb,
+            file_priorities.clone(),
         )?);
 
-        let file_priorities = vec![FilePriority::Normal; meta.files.len()];
+        // Reflect initial priorities in the piece manager.
+        {
+            let fp = file_priorities.lock();
+            piece_manager.apply_file_priorities(&meta.files, &fp);
+        }
 
         let stats = Arc::new(Mutex::new(TorrentStats {
             download_rate: 0,
@@ -116,7 +130,7 @@ impl TorrentSession {
             total_downloaded: Arc::new(AtomicU64::new(0)),
             total_uploaded: Arc::new(AtomicU64::new(0)),
             active_peers: Arc::new(AtomicU64::new(0)),
-            file_priorities: Arc::new(Mutex::new(file_priorities)),
+            file_priorities,
             cancel_token: tokio_util::sync::CancellationToken::new(),
             completed_sent: Arc::new(AtomicBool::new(false)),
             completed_time: Mutex::new(None),

@@ -1720,16 +1720,12 @@ fn add_torrent_dialog_view(
                         } else {
                             Some(PathBuf::from(dir_str))
                         };
-                        match engine.add_torrent_from_bytes(data, dir) {
+                        let priorities: Vec<FilePriority> = checks
+                            .iter()
+                            .map(|&c| if c { FilePriority::Normal } else { FilePriority::Skip })
+                            .collect();
+                        match engine.add_torrent_from_bytes(data, dir, Some(&priorities)) {
                             Ok(info_hash) => {
-                                for (i, &checked) in checks.iter().enumerate() {
-                                    let p = if checked {
-                                        FilePriority::Normal
-                                    } else {
-                                        FilePriority::Skip
-                                    };
-                                    engine.set_file_priority(&info_hash, i, p);
-                                }
                                 engine.start_torrent(&info_hash, &rt);
                                 tracing::info!("Added torrent: {}", info_hash);
                             }

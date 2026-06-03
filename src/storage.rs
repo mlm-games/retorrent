@@ -1,5 +1,6 @@
 use crate::error::{Result, TorrentError};
 use crate::metainfo::MetaInfo;
+use crate::types::FilePriority;
 use lru::LruCache;
 use memmap2::MmapOptions;
 use parking_lot::Mutex;
@@ -15,6 +16,7 @@ pub struct DiskStorage {
     meta: MetaInfo,
     read_cache: Mutex<LruCache<u32, Arc<Vec<u8>>>>,
     write_files: Mutex<HashMap<PathBuf, File>>,
+    file_priorities: Arc<Mutex<Vec<FilePriority>>>,
 }
 
 impl DiskStorage {
@@ -23,8 +25,20 @@ impl DiskStorage {
         meta: &MetaInfo,
         prealloc_files: bool,
         cache_size_mb: usize,
+        file_priorities: Arc<Mutex<Vec<FilePriority>>>,
     ) -> Result<Self> {
-        for file_info in &meta.files {
+        let priorities_guard = file_priorities.lock();
+        for (idx, file_info) in meta.files.iter().enumerate() {
+            let is_skipped = idx < priorities_guard.len()
+                && priorities_guard[idx] == FilePriority::Skip;
+            if is_skipped {
+                // Create parent dirs so sibling files still work, but skip the file itself.
+                let full_path = base_path.join(&file_info.path);
+                if let Some(parent) = full_path.parent() {
+                    fs::create_dir_all(parent)?;
+                }
+                continue;
+            }
             let full_path = base_path.join(&file_info.path);
             if let Some(parent) = full_path.parent() {
                 fs::create_dir_all(parent)?;
@@ -36,6 +50,7 @@ impl DiskStorage {
                 }
             }
         }
+        drop(priorities_guard);
 
         let cache_entries = if meta.piece_length > 0 {
             let max_bytes = (cache_size_mb as u64).saturating_mul(1024 * 1024);
@@ -52,6 +67,7 @@ impl DiskStorage {
                 NonZeroUsize::new(cache_entries.max(1)).unwrap(),
             )),
             write_files: Mutex::new(HashMap::new()),
+            file_priorities,
         })
     }
 
@@ -94,7 +110,8 @@ impl DiskStorage {
         let mut data_offset = 0usize;
         let mut remaining = data.len();
 
-        for file_info in &self.meta.files {
+        let priorities = self.file_priorities.lock().clone();
+        for (file_idx, file_info) in self.meta.files.iter().enumerate() {
             let file_start = file_info.offset;
             let file_end = file_info.offset + file_info.length;
 
@@ -109,10 +126,12 @@ impl DiskStorage {
                 continue;
             }
 
-            let mut file = self.get_write_file(&file_info.path)?;
-            file.seek(SeekFrom::Start(offset_in_file))?;
-            file.write_all(&data[data_offset..data_offset + writable])?;
-            let _ = file.sync_data();
+            if file_idx >= priorities.len() || priorities[file_idx] != FilePriority::Skip {
+                let mut file = self.get_write_file(&file_info.path)?;
+                file.seek(SeekFrom::Start(offset_in_file))?;
+                file.write_all(&data[data_offset..data_offset + writable])?;
+                let _ = file.sync_data();
+            }
 
             data_offset += writable;
             remaining -= writable;

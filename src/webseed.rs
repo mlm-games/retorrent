@@ -20,6 +20,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 
+use parking_lot::Mutex;
 use sha1::{Digest, Sha1};
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, info, warn};
@@ -28,6 +29,7 @@ use crate::metainfo::MetaInfo;
 use crate::network::TorrentStats;
 use crate::piece::PieceManager;
 use crate::storage::DiskStorage;
+use crate::types::FilePriority;
 
 pub struct WebseedSource {
     pub meta: Arc<MetaInfo>,
@@ -395,7 +397,8 @@ mod tests {
         // Use a meta that points to /tmp/empty so the constructor succeeds.
         let dir = tempfile_path();
         let m = single_file_meta();
-        let s = DiskStorage::new(dir, &m, false, 1).expect("storage");
+        let fp = Arc::new(Mutex::new(vec![FilePriority::Normal; m.files.len()]));
+        let s = DiskStorage::new(dir, &m, false, 1, fp).expect("storage");
         Arc::new(s)
     }
 

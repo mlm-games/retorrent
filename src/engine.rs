@@ -64,6 +64,7 @@ impl TorrentEngine {
         &self,
         data: Vec<u8>,
         download_dir: Option<PathBuf>,
+        file_priorities: Option<&[FilePriority]>,
     ) -> Result<InfoHash> {
         let meta = MetaInfo::from_bytes(&data)?;
         let info_hash = meta.info_hash;
@@ -82,11 +83,19 @@ impl TorrentEngine {
             dir,
             self.peer_id,
             self.config.clone(),
+            file_priorities,
         )?;
 
         if let Some(rd) = ResumeData::load_from_dir(&info_hash.to_hex(), &Config::resume_dir()) {
             session.apply_resume(&rd);
             tracing::info!("Restored resume data for {}", info_hash);
+        }
+
+        // Re-apply user's file priorities after resume data so they take precedence.
+        if let Some(priorities) = file_priorities {
+            for (i, &p) in priorities.iter().enumerate() {
+                session.set_file_priority(i, p);
+            }
         }
 
         session.set_torrent_bytes(data);
@@ -142,6 +151,7 @@ impl TorrentEngine {
             dir,
             self.peer_id,
             self.config.clone(),
+            None,
         )?;
 
         session.stats.lock().state = TorrentState::FetchingMetadata;
@@ -208,6 +218,7 @@ impl TorrentEngine {
                             self.config.download_dir.clone(),
                             self.peer_id,
                             self.config.clone(),
+                            Some(&rd.file_priorities),
                         ) {
                             Ok(session) => {
                                 session.apply_resume(&rd);
@@ -237,6 +248,16 @@ impl TorrentEngine {
             let session = entry.value();
             session.dl_limiter.set_rate(new_config.max_download_rate);
             session.ul_limiter.set_rate(new_config.max_upload_rate);
+        }
+    }
+
+    pub fn save_resume_data(&self, info_hash: &InfoHash) {
+        let dir = Config::resume_dir();
+        if let Some(session) = self.sessions.get(info_hash) {
+            let rd = session.snapshot_resume();
+            if let Err(e) = rd.save_to_dir(&dir) {
+                tracing::warn!("Failed to save resume for {}: {}", info_hash, e);
+            }
         }
     }
 

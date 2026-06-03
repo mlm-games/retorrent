@@ -116,7 +116,7 @@ fn main() -> Result<()> {
             .map(|m| m.into_inner().unwrap_or_default())
             .unwrap_or_default();
         for p in pending {
-            if let Ok(hash) = engine.add_torrent_from_bytes(p.data, Some(p.suggested_dir)) {
+            if let Ok(hash) = engine.add_torrent_from_bytes(p.data, Some(p.suggested_dir), None) {
                 engine.start_torrent(&hash, &rt);
             }
         }
