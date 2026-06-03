@@ -14,9 +14,10 @@ use repose_ui::overlay::OverlayHandle;
 use repose_ui::scroll::{ScrollArea, remember_scroll_state};
 use repose_ui::{textfield::TextField, *};
 
+use crate::PendingTorrent;
 use crate::config::Config;
 use crate::engine::TorrentEngine;
-use crate::metainfo::FileInfo;
+use crate::metainfo::{FileInfo, MetaInfo};
 use crate::network::TorrentStats;
 use crate::tray::{AppTray, TrayCommand};
 use crate::types::*;
@@ -24,7 +25,6 @@ use crate::ui::components;
 use crate::ui::icons::{Symbols, icon};
 use crate::ui::theme;
 use crate::ui::utils::*;
-use crate::PendingTorrent;
 use repose_material::Symbol;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -129,8 +129,6 @@ pub fn app(
     let settings_state = remember(|| DialogState::new());
     let add_state = remember(|| DialogState::new());
 
-    // Snapshot the intent-provided torrents and show the add dialog for the
-    // first one. The dialog handler will drain the rest as it closes.
     let pending: Rc<Signal<Vec<PendingTorrent>>> = remember(|| {
         let v = std::mem::take(&mut *pending_torrents.lock().unwrap());
         signal(v)
@@ -143,12 +141,30 @@ pub fn app(
     if !add_taken.get() {
         if let Some(next) = pending.get().first().cloned() {
             file_checks.set(vec![true; next.files.len()]);
-            download_path_input
-                .set(next.suggested_dir.to_string_lossy().to_string());
+            download_path_input.set(next.suggested_dir.to_string_lossy().to_string());
             current_add.set(Some(next));
             add_state.show();
         }
         add_taken.set(true);
+    }
+
+    let pending_from_button: Rc<Arc<Mutex<Vec<PendingTorrent>>>> =
+        remember(|| Arc::new(Mutex::new(Vec::new())));
+
+    if let Ok(mut p) = pending_from_button.lock() {
+        if !p.is_empty() {
+            let mut q = pending.get();
+            q.extend(p.drain(..));
+            pending.set(q);
+            if current_add.get().is_none() {
+                if let Some(next) = pending.get().first().cloned() {
+                    file_checks.set(vec![true; next.files.len()]);
+                    download_path_input.set(next.suggested_dir.to_string_lossy().to_string());
+                    current_add.set(Some(next));
+                    add_state.show();
+                }
+            }
+        }
     }
 
     // Process tray commands
@@ -272,6 +288,7 @@ pub fn app(
             settings_state.clone(),
             global_dl.get(),
             global_ul.get(),
+            (*pending_from_button).clone(),
         ),
         main_shell_view(
             &all_torrents,
@@ -314,11 +331,7 @@ pub fn app(
                 selected.clone(),
                 engine.clone(),
             ),
-            settings_dialog_view(
-                settings_state.clone(),
-                (*overlay).clone(),
-                engine.clone(),
-            ),
+            settings_dialog_view(settings_state.clone(), (*overlay).clone(), engine.clone()),
             add_torrent_dialog_view(
                 add_state.clone(),
                 (*overlay).clone(),
@@ -385,6 +398,7 @@ fn top_bar_view(
     settings_state: Rc<DialogState>,
     global_dl: u64,
     global_ul: u64,
+    pending_from_button: Arc<Mutex<Vec<PendingTorrent>>>,
 ) -> View {
     let th = theme();
 
@@ -439,23 +453,31 @@ fn top_bar_view(
         children.push(FilledButton(
             Modifier::new().height(40.0),
             {
+                let pending_from_button = pending_from_button.clone();
                 let engine = engine.clone();
-                let rt = rt.clone();
                 move || {
+                    let pending_from_button = pending_from_button.clone();
                     let engine = engine.clone();
-                    let rt = rt.clone();
                     std::thread::spawn(move || {
                         if let Some(path) = rfd::FileDialog::new()
                             .add_filter("Torrent Files", &["torrent"])
                             .pick_file()
                         {
                             match std::fs::read(&path) {
-                                Ok(data) => match engine.add_torrent_from_bytes(data, None) {
-                                    Ok(info_hash) => {
-                                        engine.start_torrent(&info_hash, &rt);
-                                        tracing::info!("Added torrent: {}", info_hash);
+                                Ok(data) => match MetaInfo::from_bytes(&data) {
+                                    Ok(meta) => {
+                                        let suggested_dir = engine.config.download_dir.clone();
+                                        if let Ok(mut p) = pending_from_button.lock() {
+                                            p.push(PendingTorrent {
+                                                name: meta.name,
+                                                total_size: meta.total_size,
+                                                files: meta.files,
+                                                data,
+                                                suggested_dir,
+                                            });
+                                        }
                                     }
-                                    Err(e) => tracing::error!("Failed to add torrent: {}", e),
+                                    Err(e) => tracing::error!("Failed to parse torrent: {}", e),
                                 },
                                 Err(e) => tracing::error!("Failed to read file: {}", e),
                             }
@@ -1110,21 +1132,34 @@ fn files_tab_view(torrent: &TorrentRow, _info_hash: InfoHash, _engine: Arc<Torre
             let mut views: Vec<View> = Vec::new();
 
             views.push(
-                Row(Modifier::new().fill_max_width().padding(4.0).column_gap(8.0)).child((
-                    Text("File").size(12.0).color(th.on_surface)
+                Row(Modifier::new()
+                    .fill_max_width()
+                    .padding(4.0)
+                    .column_gap(8.0))
+                .child((
+                    Text("File")
+                        .size(12.0)
+                        .color(th.on_surface)
                         .modifier(Modifier::new().flex_grow(1.0)),
-                    Text("Size").size(12.0).color(th.on_surface)
+                    Text("Size")
+                        .size(12.0)
+                        .color(th.on_surface)
                         .modifier(Modifier::new().width(80.0)),
-                    Text("Progress").size(12.0).color(th.on_surface)
+                    Text("Progress")
+                        .size(12.0)
+                        .color(th.on_surface)
                         .modifier(Modifier::new().flex_grow(2.0)),
-                    Text("Priority").size(12.0).color(th.on_surface)
+                    Text("Priority")
+                        .size(12.0)
+                        .color(th.on_surface)
                         .modifier(Modifier::new().width(70.0)),
                 )),
             );
 
-            views.push(
-                Box(Modifier::new().fill_max_width().height(1.0).background(th.outline_variant)),
-            );
+            views.push(Box(Modifier::new()
+                .fill_max_width()
+                .height(1.0)
+                .background(th.outline_variant)));
 
             for (fi, file) in files.iter().enumerate() {
                 let display_name = file.path.rsplit('/').next().unwrap_or(&file.path);
@@ -1135,13 +1170,23 @@ fn files_tab_view(torrent: &TorrentRow, _info_hash: InfoHash, _engine: Arc<Torre
                 let progress = torrent.stats.progress.clamp(0.0, 1.0);
 
                 views.push(
-                    Row(Modifier::new().fill_max_width().padding(2.0).column_gap(8.0)).child((
-                        Text(display_name).size(11.0).color(th.on_surface)
+                    Row(Modifier::new()
+                        .fill_max_width()
+                        .padding(2.0)
+                        .column_gap(8.0))
+                    .child((
+                        Text(display_name)
+                            .size(11.0)
+                            .color(th.on_surface)
                             .modifier(Modifier::new().flex_grow(1.0)),
-                        Text(format_bytes(file.length)).size(11.0).color(th.on_surface)
+                        Text(format_bytes(file.length))
+                            .size(11.0)
+                            .color(th.on_surface)
                             .modifier(Modifier::new().width(80.0)),
                         file_progress_view(progress, state),
-                        Text(current_prio.to_string()).size(11.0).color(th.on_surface)
+                        Text(current_prio.to_string())
+                            .size(11.0)
+                            .color(th.on_surface)
                             .modifier(Modifier::new().width(70.0)),
                     )),
                 );
@@ -1404,7 +1449,8 @@ fn settings_dialog_view(
     engine: Arc<TorrentEngine>,
 ) -> View {
     let th = theme();
-    let config: Rc<Signal<Config>> = remember_with_key(state.key("cfg"), || signal((*engine.config).clone()));
+    let config: Rc<Signal<Config>> =
+        remember_with_key(state.key("cfg"), || signal((*engine.config).clone()));
     let last_visible = remember_with_key(state.key("lv"), || signal(false));
     let vis = state.is_visible();
     if vis && !last_visible.get() {
@@ -1473,29 +1519,54 @@ fn settings_dialog_view(
                     let feature_switches: Vec<(&str, bool, Rc<dyn Fn(bool)>)> = vec![
                         ("DHT", cfg.dht_enabled, {
                             let c = config.clone();
-                            Rc::new(move |v| { let mut nc = c.get(); nc.dht_enabled = v; c.set(nc); })
+                            Rc::new(move |v| {
+                                let mut nc = c.get();
+                                nc.dht_enabled = v;
+                                c.set(nc);
+                            })
                         }),
                         ("UPnP", cfg.upnp_enabled, {
                             let c = config.clone();
-                            Rc::new(move |v| { let mut nc = c.get(); nc.upnp_enabled = v; c.set(nc); })
+                            Rc::new(move |v| {
+                                let mut nc = c.get();
+                                nc.upnp_enabled = v;
+                                c.set(nc);
+                            })
                         }),
                         ("PEX", cfg.pex_enabled, {
                             let c = config.clone();
-                            Rc::new(move |v| { let mut nc = c.get(); nc.pex_enabled = v; c.set(nc); })
+                            Rc::new(move |v| {
+                                let mut nc = c.get();
+                                nc.pex_enabled = v;
+                                c.set(nc);
+                            })
                         }),
                         ("Encryption", cfg.enable_encryption, {
                             let c = config.clone();
-                            Rc::new(move |v| { let mut nc = c.get(); nc.enable_encryption = v; c.set(nc); })
+                            Rc::new(move |v| {
+                                let mut nc = c.get();
+                                nc.enable_encryption = v;
+                                c.set(nc);
+                            })
                         }),
                         ("Auto Resume", cfg.auto_resume, {
                             let c = config.clone();
-                            Rc::new(move |v| { let mut nc = c.get(); nc.auto_resume = v; c.set(nc); })
+                            Rc::new(move |v| {
+                                let mut nc = c.get();
+                                nc.auto_resume = v;
+                                c.set(nc);
+                            })
                         }),
                     ];
                     for (label, val, on_toggle) in feature_switches {
                         views.push(
-                            Row(Modifier::new().fill_max_width().align_items(AlignItems::Center)).child((
-                                Text(label).size(12.0).color(th.on_surface_variant)
+                            Row(Modifier::new()
+                                .fill_max_width()
+                                .align_items(AlignItems::Center))
+                            .child((
+                                Text(label)
+                                    .size(12.0)
+                                    .color(th.on_surface_variant)
                                     .modifier(Modifier::new().flex_grow(1.0)),
                                 Switch(val, move |v| (on_toggle)(v)),
                             )),
@@ -1582,8 +1653,7 @@ fn add_torrent_dialog_view(
                 pending.set(q.clone());
                 if let Some(next) = q.first().cloned() {
                     file_checks.set(vec![true; next.files.len()]);
-                    download_path_input
-                        .set(next.suggested_dir.to_string_lossy().to_string());
+                    download_path_input.set(next.suggested_dir.to_string_lossy().to_string());
                     current_add.set(Some(next));
                     return true;
                 }
@@ -1626,8 +1696,7 @@ fn add_torrent_dialog_view(
     };
 
     let pick_folder = {
-        let pending: std::sync::Arc<std::sync::Mutex<Option<PathBuf>>> =
-            (*browse_pending).clone();
+        let pending: std::sync::Arc<std::sync::Mutex<Option<PathBuf>>> = (*browse_pending).clone();
         move || {
             let pending = pending.clone();
             std::thread::spawn(move || {
@@ -1704,7 +1773,10 @@ fn add_torrent_dialog_view(
 
     let mut body: Vec<View> = Vec::new();
     body.push(
-        Row(Modifier::new().fill_max_width().align_items(AlignItems::Center)).child((
+        Row(Modifier::new()
+            .fill_max_width()
+            .align_items(AlignItems::Center))
+        .child((
             icon(Symbols::CLOUD_DOWNLOAD, 22.0, th.primary),
             Box(Modifier::new().width(10.0)),
             Text("Add Torrent").size(18.0).color(th.on_surface),
@@ -1712,17 +1784,28 @@ fn add_torrent_dialog_view(
     );
     body.push(Box(Modifier::new().height(10.0)));
     body.push(Text(&name).size(13.0).color(th.on_surface_variant));
-    body.push(Text(format!(
-        "{} \u{00B7} {}",
-        crate::ui::utils::format_bytes(total_size),
-        format!("{} file{}", files.len(), if files.len() == 1 { "" } else { "s" })
-    ))
-    .size(12.0)
-    .color(th.on_surface_variant));
+    body.push(
+        Text(format!(
+            "{} \u{00B7} {}",
+            crate::ui::utils::format_bytes(total_size),
+            format!(
+                "{} file{}",
+                files.len(),
+                if files.len() == 1 { "" } else { "s" }
+            )
+        ))
+        .size(12.0)
+        .color(th.on_surface_variant),
+    );
     body.push(Box(Modifier::new().height(14.0)));
     body.push(
-        Row(Modifier::new().fill_max_width().align_items(AlignItems::Center)).child((
-            Text("Download to:").size(12.0).color(th.on_surface_variant)
+        Row(Modifier::new()
+            .fill_max_width()
+            .align_items(AlignItems::Center))
+        .child((
+            Text("Download to:")
+                .size(12.0)
+                .color(th.on_surface_variant)
                 .modifier(Modifier::new().width(110.0)),
             TextField(
                 "Path",
@@ -1744,29 +1827,34 @@ fn add_torrent_dialog_view(
     );
     body.push(Box(Modifier::new().height(14.0)));
     body.push(
-        Row(Modifier::new().fill_max_width().align_items(AlignItems::Center)).child((
+        Row(Modifier::new()
+            .fill_max_width()
+            .align_items(AlignItems::Center))
+        .child((
             Text("Files:").size(12.0).color(th.on_surface_variant),
             Spacer(),
             TextButton(Modifier::new(), move || select_all(), || Text("Select All")),
             Box(Modifier::new().width(4.0)),
-            TextButton(Modifier::new(), move || select_none(), || Text("Select None")),
+            TextButton(
+                Modifier::new(),
+                move || select_none(),
+                || Text("Select None"),
+            ),
         )),
     );
-    body.push(
-        Surface(
-            Modifier::new()
-                .fill_max_width()
-                .height(220.0)
-                .background(th.surface_container_high)
-                .border(1.0, th.outline_variant, 10.0)
-                .clip_rounded(10.0),
-            ScrollArea(
-                Modifier::new().fill_max_size(),
-                remember_scroll_state("add_torrent_files"),
-                Column(Modifier::new().fill_max_width().padding(6.0)).child(file_rows),
-            ),
+    body.push(Surface(
+        Modifier::new()
+            .fill_max_width()
+            .height(220.0)
+            .background(th.surface_container_high)
+            .border(1.0, th.outline_variant, 10.0)
+            .clip_rounded(10.0),
+        ScrollArea(
+            Modifier::new().fill_max_size(),
+            remember_scroll_state("add_torrent_files"),
+            Column(Modifier::new().fill_max_width().padding(6.0)).child(file_rows),
         ),
-    );
+    ));
     body.push(Box(Modifier::new().height(16.0)));
     body.push(
         Row(Modifier::new()
@@ -1794,13 +1882,23 @@ fn add_file_row_view(
     file_checks: Rc<Signal<Vec<bool>>>,
 ) -> View {
     let th = theme();
-    let display_name = file.path.rsplit('/').next().unwrap_or(&file.path).to_string();
+    let display_name = file
+        .path
+        .rsplit('/')
+        .next()
+        .unwrap_or(&file.path)
+        .to_string();
     let full_path = file.path.clone();
     let size_text = crate::ui::utils::format_bytes(file.length);
 
     Row(Modifier::new()
         .fill_max_width()
-        .padding_values(PaddingValues { left: 6.0, right: 6.0, top: 4.0, bottom: 4.0 })
+        .padding_values(PaddingValues {
+            left: 6.0,
+            right: 6.0,
+            top: 4.0,
+            bottom: 4.0,
+        })
         .column_gap(8.0)
         .align_items(AlignItems::Center))
     .child((
