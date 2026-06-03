@@ -311,7 +311,7 @@ pub fn app(
     // Wrap in overlay host so overlay entries (dialogs) are rendered
     overlay.host(
         Modifier::new().fill_max_size(),
-        Stack(Modifier::new().fill_max_size()).child((
+        ZStack(Modifier::new().fill_max_size()).child((
             Surface(
                 Modifier::new()
                     .fill_max_size()

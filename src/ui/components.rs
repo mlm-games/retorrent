@@ -1,7 +1,7 @@
 use crate::types::TorrentState;
 use crate::ui::theme;
 use repose_core::prelude::*;
-use repose_ui::{Box, Column, Row, Stack, Text, TextStyle, ViewExt};
+use repose_ui::{Box, Column, Row, Text, TextStyle, ViewExt, ZStack};
 
 pub fn progress_bar_view(progress: f32, state: TorrentState, width: f32) -> View {
     let fill_color = match state {
@@ -23,7 +23,7 @@ pub fn progress_bar_view(progress: f32, state: TorrentState, width: f32) -> View
 
     let fill_pct = progress.clamp(0.0, 1.0);
 
-    Stack(Modifier::new().width(width).height(10.0)).child((
+    ZStack(Modifier::new().width(width).height(10.0)).child((
         Box(Modifier::new()
             .fill_max_size()
             .background(th.surface_container_highest)
