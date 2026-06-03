@@ -3,6 +3,9 @@ use parking_lot::Mutex;
 
 use std::collections::HashMap;
 use std::sync::Arc;
+use std::time::Instant;
+
+const ISSUED_TIMEOUT_SECS: u64 = 30;
 
 #[derive(Debug)]
 pub struct PieceCollector {
@@ -11,6 +14,9 @@ pub struct PieceCollector {
     pub piece_size: u64,
     pub expected_hash: [u8; 20],
     pub blocks: HashMap<u32, Vec<u8>>,
+    /// Offsets reserved by some peer (timestamped so a stalled peer
+    /// doesn't block the offset forever).
+    pub issued: HashMap<u32, Instant>,
     pub num_blocks: u32,
 }
 
@@ -22,16 +28,47 @@ impl PieceCollector {
             piece_size,
             expected_hash,
             blocks: HashMap::new(),
+            issued: HashMap::new(),
             num_blocks,
         }
     }
 
     pub fn add_block(&mut self, offset: u32, data: Vec<u8>) -> bool {
+        let was_complete = self.is_complete();
         if self.blocks.contains_key(&offset) {
-            return self.is_complete();
+            tracing::debug!(
+                "piece {} dup block at offset {} ({} bytes)",
+                self.index,
+                offset,
+                data.len()
+            );
+            return was_complete;
         }
+        self.issued.remove(&offset);
+        let total: usize = self.blocks.values().map(|v| v.len()).sum::<usize>() + data.len();
         self.blocks.insert(offset, data);
-        self.is_complete()
+        let now_complete = self.is_complete();
+        tracing::debug!(
+            "piece {} block at offset {}: blocks={}/{} bytes={}/{} complete={}",
+            self.index,
+            offset,
+            self.blocks.len(),
+            self.num_blocks,
+            total,
+            self.piece_size,
+            now_complete
+        );
+        if now_complete && !was_complete {
+            tracing::info!(
+                "piece {} assembled: blocks={}/{} bytes={}/{}",
+                self.index,
+                self.blocks.len(),
+                self.num_blocks,
+                total,
+                self.piece_size
+            );
+        }
+        now_complete
     }
 
     pub fn is_complete(&self) -> bool {
@@ -52,8 +89,9 @@ impl PieceCollector {
         Some(result)
     }
 
-    pub fn missing_blocks(&self) -> Vec<(u32, u32)> {
-        let mut missing = Vec::new();
+    pub fn claim_blocks(&mut self, count: usize) -> Vec<(u32, u32)> {
+        let now = Instant::now();
+        let mut missing: Vec<(u32, u32)> = Vec::with_capacity(self.num_blocks as usize);
         let mut offset = 0u32;
         while (offset as u64) < self.piece_size {
             if !self.blocks.contains_key(&offset) {
@@ -63,7 +101,30 @@ impl PieceCollector {
             }
             offset += BLOCK_SIZE;
         }
-        missing
+        if missing.len() > 1 {
+            for i in (1..missing.len()).rev() {
+                let j = (rand::random::<u64>() as usize) % (i + 1);
+                missing.swap(i, j);
+            }
+        }
+        let mut claimed = Vec::with_capacity(count.min(missing.len()));
+        for (offset, length) in missing {
+            if claimed.len() >= count {
+                break;
+            }
+            // Treat issued-but-stale as unreserved.
+            let is_fresh = self
+                .issued
+                .get(&offset)
+                .map(|t| now.duration_since(*t).as_secs() < ISSUED_TIMEOUT_SECS)
+                .unwrap_or(false);
+            if is_fresh {
+                continue;
+            }
+            self.issued.insert(offset, now);
+            claimed.push((offset, length));
+        }
+        claimed
     }
 }
 
@@ -147,7 +208,7 @@ impl PieceManager {
         }
     }
 
-    pub fn select_piece(&self, peer_bitfield: &[u8]) -> Option<u32> {
+    pub fn select_piece(&self, peer_bitfield: &[u8]) -> Vec<u32> {
         let have = self.have.lock();
         let in_progress = self.in_progress.lock();
         let avail = self.piece_availability.lock();
@@ -183,7 +244,7 @@ impl PieceManager {
         }
 
         if candidates.is_empty() {
-            return None;
+            return Vec::new();
         }
 
         candidates.sort_by(|a, b| {
@@ -202,18 +263,12 @@ impl PieceManager {
 
         let best_prio = candidates[0].prio;
         let best_avail = candidates[0].avail;
-        let top: Vec<u32> = candidates
+        candidates
             .iter()
             .filter(|c| c.prio == best_prio && c.avail <= best_avail + 2)
             .take(10)
             .map(|c| c.index)
-            .collect();
-
-        if top.is_empty() {
-            Some(candidates[0].index)
-        } else {
-            Some(top[rand::random_range(0..top.len())])
-        }
+            .collect()
     }
 
     pub fn is_in_endgame(&self) -> bool {
@@ -244,7 +299,11 @@ impl PieceManager {
     }
 
     pub fn have_piece(&self, index: u32) -> bool {
-        self.have.lock().get(index as usize).copied().unwrap_or(false)
+        self.have
+            .lock()
+            .get(index as usize)
+            .copied()
+            .unwrap_or(false)
     }
 
     pub fn piece_in_progress(&self, index: u32) -> bool {
@@ -270,6 +329,37 @@ impl PieceManager {
         let collector = Arc::new(Mutex::new(PieceCollector::new(index, piece_size, hash)));
         ip.insert(index, collector.clone());
         collector
+    }
+
+    /// Pick an in-progress piece that the peer has, preferring ones
+    /// closest to completion so we can finish a piece quickly. Returns
+    /// (index, collector) or None if no in-progress piece matches the
+    /// peer's bitfield.
+    pub fn pick_in_progress_for_peer(
+        &self,
+        peer_bitfield: &[u8],
+    ) -> Option<(u32, Arc<Mutex<PieceCollector>>)> {
+        let in_progress = self.in_progress.lock();
+        let mut best: Option<(u32, Arc<Mutex<PieceCollector>>, u32)> = None;
+        for (idx, collector) in in_progress.iter() {
+            let byte_idx = (*idx / 8) as usize;
+            let bit_offset = 7 - (*idx % 8);
+            let peer_has =
+                byte_idx < peer_bitfield.len() && (peer_bitfield[byte_idx] >> bit_offset) & 1 == 1;
+            if !peer_has {
+                continue;
+            }
+            let filled = collector.lock().blocks.len() as u32;
+            // Skip pieces already complete — they should be in `have`
+            // and removed from in_progress, but guard anyway.
+            if filled >= collector.lock().num_blocks {
+                continue;
+            }
+            if best.as_ref().map(|b| filled > b.2).unwrap_or(true) {
+                best = Some((*idx, collector.clone(), filled));
+            }
+        }
+        best.map(|(i, c, _)| (i, c))
     }
 
     pub fn abort_piece(&self, index: u32) {

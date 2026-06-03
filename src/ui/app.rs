@@ -590,6 +590,7 @@ fn filter_search_panel(
     .child((
         TextField(
             "Search torrents",
+            search_query.get(),
             Modifier::new().fill_max_width().height(42.0),
             Some({
                 let q = search_query.clone();
@@ -1274,6 +1275,7 @@ fn magnet_dialog_view(
             Box(Modifier::new().height(12.0)),
             TextField(
                 "magnet:?xt=urn:btih:...",
+                magnet_input.get(),
                 Modifier::new().fill_max_width().height(60.0),
                 Some({
                     let m = magnet_input.clone();
@@ -1724,6 +1726,7 @@ fn add_torrent_dialog_view(
                 .modifier(Modifier::new().width(110.0)),
             TextField(
                 "Path",
+                download_path_input.get(),
                 Modifier::new().flex_grow(1.0).height(36.0),
                 Some({
                     let p = download_path_input.clone();

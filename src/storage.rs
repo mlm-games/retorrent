@@ -3,15 +3,18 @@ use crate::metainfo::MetaInfo;
 use lru::LruCache;
 use memmap2::MmapOptions;
 use parking_lot::Mutex;
+use std::collections::HashMap;
 use std::fs::{self, File, OpenOptions};
 use std::io::{Read, Seek, SeekFrom, Write};
 use std::num::NonZeroUsize;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 pub struct DiskStorage {
     base_path: PathBuf,
     meta: MetaInfo,
-    read_cache: Mutex<LruCache<u32, Vec<u8>>>,
+    read_cache: Mutex<LruCache<u32, Arc<Vec<u8>>>>,
+    write_files: Mutex<HashMap<PathBuf, File>>,
 }
 
 impl DiskStorage {
@@ -48,7 +51,24 @@ impl DiskStorage {
             read_cache: Mutex::new(LruCache::new(
                 NonZeroUsize::new(cache_entries.max(1)).unwrap(),
             )),
+            write_files: Mutex::new(HashMap::new()),
         })
+    }
+
+    fn get_write_file(&self, rel_path: &str) -> Result<File> {
+        let full_path = self.base_path.join(rel_path);
+        if let Some(f) = self.write_files.lock().get(&full_path) {
+            return Ok(f.try_clone()?);
+        }
+        let f = OpenOptions::new()
+            .read(true)
+            .write(true)
+            .create(true)
+            .open(&full_path)
+            .map_err(|e| TorrentError::Storage(e.to_string()))?;
+        let cloned = f.try_clone()?;
+        self.write_files.lock().insert(full_path, f);
+        Ok(cloned)
     }
 
     fn open_file_read(&self, path: &str) -> Result<File> {
@@ -59,7 +79,7 @@ impl DiskStorage {
             .map_err(|e| TorrentError::Storage(e.to_string()))
     }
 
-    fn open_file_write(&self, path: &str) -> Result<File> {
+    fn open_file_write_uncached(&self, path: &str) -> Result<File> {
         let full_path = self.base_path.join(path);
         OpenOptions::new()
             .read(true)
@@ -89,9 +109,10 @@ impl DiskStorage {
                 continue;
             }
 
-            let mut file = self.open_file_write(&file_info.path)?;
+            let mut file = self.get_write_file(&file_info.path)?;
             file.seek(SeekFrom::Start(offset_in_file))?;
             file.write_all(&data[data_offset..data_offset + writable])?;
+            let _ = file.sync_data();
 
             data_offset += writable;
             remaining -= writable;
@@ -104,7 +125,7 @@ impl DiskStorage {
         Ok(())
     }
 
-    pub fn read_piece(&self, index: u32, piece_size: u64) -> Result<Vec<u8>> {
+    pub fn read_piece(&self, index: u32, piece_size: u64) -> Result<Arc<Vec<u8>>> {
         {
             let mut cache = self.read_cache.lock();
             if let Some(data) = cache.get(&index) {
@@ -113,10 +134,11 @@ impl DiskStorage {
         }
 
         let data = self.read_piece_uncached(index, piece_size)?;
+        let arc = Arc::new(data);
 
-        self.read_cache.lock().put(index, data.clone());
+        self.read_cache.lock().put(index, arc.clone());
 
-        Ok(data)
+        Ok(arc)
     }
 
     fn read_piece_uncached(&self, index: u32, piece_size: u64) -> Result<Vec<u8>> {

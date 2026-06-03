@@ -201,7 +201,9 @@ impl TorrentSession {
             let info_hash = self.info_hash;
             let port = self.config.listen_port;
             tokio::spawn(async move {
-                dht_session.dht_loop(dht, info_hash, port, dht_peer_tx).await;
+                dht_session
+                    .dht_loop(dht, info_hash, port, dht_peer_tx)
+                    .await;
             });
         }
 
@@ -311,7 +313,13 @@ impl TorrentSession {
         });
     }
 
-    async fn dht_loop(self: Arc<Self>, dht: Arc<DhtNode>, info_hash: InfoHash, port: u16, peer_tx: mpsc::Sender<PeerEvent>) {
+    async fn dht_loop(
+        self: Arc<Self>,
+        dht: Arc<DhtNode>,
+        info_hash: InfoHash,
+        port: u16,
+        peer_tx: mpsc::Sender<PeerEvent>,
+    ) {
         let mut peers = dht.get_peers(info_hash, Some(port));
         loop {
             tokio::select! {
@@ -438,20 +446,21 @@ impl TorrentSession {
 
             if self.piece_manager.is_complete()
                 && !self.completed_sent.swap(true, Ordering::Relaxed)
-                && let Some(tracker_url) = trackers.first() {
-                    let _ = client
-                        .announce(
-                            tracker_url,
-                            &self.info_hash,
-                            &self.peer_id,
-                            self.config.listen_port,
-                            self.total_uploaded.load(Ordering::Relaxed),
-                            self.total_downloaded.load(Ordering::Relaxed),
-                            0,
-                            Some("completed"),
-                        )
-                        .await;
-                }
+                && let Some(tracker_url) = trackers.first()
+            {
+                let _ = client
+                    .announce(
+                        tracker_url,
+                        &self.info_hash,
+                        &self.peer_id,
+                        self.config.listen_port,
+                        self.total_uploaded.load(Ordering::Relaxed),
+                        self.total_downloaded.load(Ordering::Relaxed),
+                        0,
+                        Some("completed"),
+                    )
+                    .await;
+            }
 
             tokio::select! {
                 _ = tokio::time::sleep(Duration::from_secs(interval)) => {},
@@ -496,7 +505,8 @@ impl TorrentSession {
         // BEP-10 extended handshake. Must be sent before any other extended
         // message. We advertise ut_pex (id=1).
         let hs = PeerMessage::build_extended_handshake_payload(self.config.pipeline_depth as u32);
-        conn.send_message(&PeerMessage::Extended { id: 0, payload: hs }).await?;
+        conn.send_message(&PeerMessage::Extended { id: 0, payload: hs })
+            .await?;
 
         self.peer_choke_stats.lock().insert(
             addr,
@@ -513,6 +523,7 @@ impl TorrentSession {
         let mut pending_requests: u32 = 0;
         let mut blocks_in_piece: u32 = 0;
         let max_pipeline = self.config.pipeline_depth;
+        let mut issued_by_us: HashSet<u32> = HashSet::new();
 
         let mut keepalive_timer = Instant::now();
         let mut last_pex_send = Instant::now();
@@ -566,13 +577,10 @@ impl TorrentSession {
                     let candidates = if in_endgame {
                         self.piece_manager.get_endgame_pieces()
                     } else {
-                        self.piece_manager
-                            .select_piece(&conn.bitfield)
-                            .into_iter()
-                            .collect()
+                        self.piece_manager.select_piece(&conn.bitfield)
                     };
 
-                    for piece_idx in candidates.iter().take(3) {
+                    for piece_idx in candidates.iter().take(10) {
                         if let Some(collector) = self.piece_manager.try_start_piece(*piece_idx) {
                             blocks_in_piece = collector.lock().num_blocks;
                             total_sent = 0;
@@ -588,26 +596,48 @@ impl TorrentSession {
                             break;
                         }
                     }
+
+                    // No new piece could be started — every candidate is
+                    // already in_progress (started by some other peer but
+                    // not yet complete). Join an existing in-progress
+                    // piece so we can fill the last few blocks. Without
+                    // this, pieces stall at 400+ blocks once all
+                    // candidates are taken: nobody requests the missing
+                    // blocks because try_start_piece returns None.
+                    if current_piece.is_none() {
+                        if let Some((idx, collector)) =
+                            self.piece_manager.pick_in_progress_for_peer(&conn.bitfield)
+                        {
+                            blocks_in_piece = collector.lock().num_blocks;
+                            total_sent = 0;
+                            current_piece = Some(collector);
+                            current_piece_index = Some(idx);
+                        }
+                    }
                 }
 
                 if let Some(ref collector) = current_piece {
                     let max_to_send = blocks_in_piece.saturating_sub(total_sent);
                     if max_to_send > 0 {
-                        let missing = collector.lock().missing_blocks();
                         let pipeline_room = max_pipeline.saturating_sub(pending_requests);
-                        let send_count = (max_to_send as usize)
-                            .min(pipeline_room as usize)
-                            .min(missing.len());
-                        for (offset, length) in missing.iter().take(send_count) {
-                            self.dl_limiter.wait_consume(*length as u64).await;
+                        let want = (max_to_send as usize).min(pipeline_room as usize);
+                        // `claim_blocks` reserves the offsets in the
+                        // piece's issued set (with a 30s timeout) and
+                        // returns them in a randomized order so each
+                        // peer's 32-block pipeline covers a different
+                        // slice of the piece.
+                        let claimed = collector.lock().claim_blocks(want);
+                        for (offset, length) in claimed {
+                            self.dl_limiter.wait_consume(length as u64).await;
                             conn.send_message(&PeerMessage::Request {
                                 index: current_piece_index.unwrap(),
-                                begin: *offset,
-                                length: *length,
+                                begin: offset,
+                                length,
                             })
                             .await?;
                             pending_requests += 1;
                             total_sent += 1;
+                            issued_by_us.insert(offset);
                         }
                     }
                 }
@@ -728,7 +758,9 @@ impl TorrentSession {
                 }
                 PeerMessage::Extended { id, payload } => {
                     let pex_id = conn.peer_pex_id.unwrap_or(1);
-                    if id != pex_id { continue; }
+                    if id != pex_id {
+                        continue;
+                    }
                     let (added, _dropped) = PeerMessage::parse_pex_payload(&payload);
                     for peer in added {
                         if peer != conn.addr && !known_peers.contains(&peer) {
@@ -738,6 +770,7 @@ impl TorrentSession {
                 }
                 PeerMessage::Piece { index, begin, data } => {
                     pending_requests = pending_requests.saturating_sub(1);
+                    issued_by_us.remove(&begin);
                     let data_len = data.len() as u64;
                     self.total_downloaded.fetch_add(data_len, Ordering::Relaxed);
                     self.peer_choke_stats
@@ -760,6 +793,11 @@ impl TorrentSession {
                                 let storage = self.storage.clone();
                                 let pm = self.piece_manager.clone();
                                 let idx = index;
+                                tracing::info!(
+                                    "verifying piece {} ({} bytes)",
+                                    idx,
+                                    piece_data.len()
+                                );
                                 tokio::spawn(async move {
                                     if let Err(e) = tokio::task::spawn_blocking(move || {
                                         let mut hasher = sha1::Sha1::new();
@@ -777,6 +815,7 @@ impl TorrentSession {
                                                 idx,
                                                 pm.progress() * 100.0
                                             );
+                                            tracing::debug!("piece {} verified and written", idx);
                                         } else {
                                             let already_done = pm
                                                 .get_have_vec()
@@ -806,6 +845,7 @@ impl TorrentSession {
                             current_piece_index = None;
                             pending_requests = 0;
                             total_sent = 0;
+                            issued_by_us.clear();
                         }
                     }
                 }
@@ -821,8 +861,7 @@ impl TorrentSession {
                         {
                             continue;
                         }
-                        let have = self.piece_manager.get_have_vec();
-                        if have.get(index as usize).copied().unwrap_or(false) {
+                        if self.piece_manager.have_piece(index) {
                             let piece_size = self.piece_manager.piece_size(index);
                             if begin as u64 + length as u64 > piece_size {
                                 continue;
@@ -857,6 +896,21 @@ impl TorrentSession {
                 }
                 _ => {}
             }
+        }
+
+        if let Some(idx) = current_piece_index {
+            // Release any blocks this conn claimed but never received.
+            // The piece's 30s timeout would also free these, but
+            // releasing on exit lets another peer claim them
+            // immediately instead of waiting up to 30s.
+            if let Some(collector) = current_piece.as_ref() {
+                let mut c = collector.lock();
+                for offset in &issued_by_us {
+                    c.issued.remove(offset);
+                }
+            }
+            self.piece_manager.abort_piece(idx);
+            pending_requests = 0;
         }
 
         self.peer_choke_stats.lock().remove(&addr);
