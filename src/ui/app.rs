@@ -1629,8 +1629,7 @@ fn add_torrent_dialog_view(
     let visible = state.is_visible();
     let torrent = current_add.get();
 
-    // Thread-safe channel for the folder-pick result. The Browse button spawns
-    // a thread (because rfd blocks) and writes here; the UI reads each frame.
+    // Thread-safe channel for the folder-pick result.
     let browse_pending: Rc<std::sync::Arc<std::sync::Mutex<Option<PathBuf>>>> =
         remember(|| std::sync::Arc::new(std::sync::Mutex::new(None)));
     if let Ok(mut p) = browse_pending.lock() {
@@ -1639,8 +1638,7 @@ fn add_torrent_dialog_view(
         }
     }
 
-    // Drain the next pending torrent (if any) into `current_add` and update
-    // the form state to match. Caller must check whether to show/hide the dialog.
+    // Drain the next pending torrent (if any) into `current_add`.
     let advance = {
         let pending = pending.clone();
         let current_add = current_add.clone();
@@ -1665,213 +1663,214 @@ fn add_torrent_dialog_view(
         }
     };
 
-    if !visible {
-        return Box(Modifier::new().size(0.0, 0.0));
-    }
-    let torrent = match torrent {
-        Some(t) => t,
-        None => {
-            return Box(Modifier::new().size(0.0, 0.0));
-        }
-    };
+    let content: View = if visible {
+        if let Some(ref torrent) = torrent {
+            let files = torrent.files.clone();
+            let total_size = torrent.total_size;
+            let name = torrent.name.clone();
+            let checks = file_checks.get();
 
-    let files = torrent.files.clone();
-    let total_size = torrent.total_size;
-    let name = torrent.name.clone();
-    let checks = file_checks.get();
-
-    let select_all = {
-        let file_checks = file_checks.clone();
-        let n = files.len();
-        move || {
-            file_checks.set(vec![true; n]);
-        }
-    };
-    let select_none = {
-        let file_checks = file_checks.clone();
-        let n = files.len();
-        move || {
-            file_checks.set(vec![false; n]);
-        }
-    };
-
-    let pick_folder = {
-        let pending: std::sync::Arc<std::sync::Mutex<Option<PathBuf>>> = (*browse_pending).clone();
-        move || {
-            let pending = pending.clone();
-            std::thread::spawn(move || {
-                if let Some(folder) = rfd::FileDialog::new().pick_folder() {
-                    if let Ok(mut p) = pending.lock() {
-                        *p = Some(folder);
-                    }
+            let select_all = {
+                let file_checks = file_checks.clone();
+                let n = files.len();
+                move || {
+                    file_checks.set(vec![true; n]);
                 }
-            });
-        }
-    };
+            };
+            let select_none = {
+                let file_checks = file_checks.clone();
+                let n = files.len();
+                move || {
+                    file_checks.set(vec![false; n]);
+                }
+            };
 
-    let on_confirm = {
-        let advance = advance.clone();
-        let state = state.clone();
-        let engine = engine.clone();
-        let rt = rt.clone();
-        let current_add = current_add.clone();
-        let download_path_input = download_path_input.clone();
-        let file_checks = file_checks.clone();
-        move || {
-            if let Some(pt) = current_add.get() {
-                let data = pt.data.clone();
-                let checks = file_checks.get();
-                let dir_str = download_path_input.get().trim().to_string();
-                let dir = if dir_str.is_empty() {
-                    None
-                } else {
-                    Some(PathBuf::from(dir_str))
-                };
-                match engine.add_torrent_from_bytes(data, dir) {
-                    Ok(info_hash) => {
-                        for (i, &checked) in checks.iter().enumerate() {
-                            let p = if checked {
-                                FilePriority::Normal
-                            } else {
-                                FilePriority::Skip
-                            };
-                            engine.set_file_priority(&info_hash, i, p);
+            let pick_folder = {
+                let pending: std::sync::Arc<std::sync::Mutex<Option<PathBuf>>> =
+                    (*browse_pending).clone();
+                move || {
+                    let pending = pending.clone();
+                    std::thread::spawn(move || {
+                        if let Some(folder) = rfd::FileDialog::new().pick_folder() {
+                            if let Ok(mut p) = pending.lock() {
+                                *p = Some(folder);
+                            }
                         }
-                        engine.start_torrent(&info_hash, &rt);
-                        tracing::info!("Added torrent: {}", info_hash);
-                    }
-                    Err(e) => tracing::error!("Failed to add torrent: {}", e),
+                    });
                 }
-            }
-            let has_more = advance();
-            if !has_more {
-                state.dismiss();
-            }
-        }
-    };
-    let on_cancel = {
-        let advance = advance.clone();
-        let state = state.clone();
-        move || {
-            let has_more = advance();
-            if !has_more {
-                state.dismiss();
-            }
-        }
-    };
+            };
 
-    let file_rows: Vec<View> = files
-        .iter()
-        .enumerate()
-        .map(|(i, file)| {
-            let checked = checks.get(i).copied().unwrap_or(true);
-            let fi: FileInfo = file.clone();
-            let file_checks = file_checks.clone();
-            add_file_row_view(i, fi, checked, file_checks)
-        })
-        .collect();
+            let on_confirm = {
+                let advance = advance.clone();
+                let state = state.clone();
+                let engine = engine.clone();
+                let rt = rt.clone();
+                let current_add = current_add.clone();
+                let download_path_input = download_path_input.clone();
+                let file_checks = file_checks.clone();
+                move || {
+                    if let Some(pt) = current_add.get() {
+                        let data = pt.data.clone();
+                        let checks = file_checks.get();
+                        let dir_str = download_path_input.get().trim().to_string();
+                        let dir = if dir_str.is_empty() {
+                            None
+                        } else {
+                            Some(PathBuf::from(dir_str))
+                        };
+                        match engine.add_torrent_from_bytes(data, dir) {
+                            Ok(info_hash) => {
+                                for (i, &checked) in checks.iter().enumerate() {
+                                    let p = if checked {
+                                        FilePriority::Normal
+                                    } else {
+                                        FilePriority::Skip
+                                    };
+                                    engine.set_file_priority(&info_hash, i, p);
+                                }
+                                engine.start_torrent(&info_hash, &rt);
+                                tracing::info!("Added torrent: {}", info_hash);
+                            }
+                            Err(e) => tracing::error!("Failed to add torrent: {}", e),
+                        }
+                    }
+                    let has_more = advance();
+                    if !has_more {
+                        state.dismiss();
+                    }
+                }
+            };
+            let on_cancel = {
+                let advance = advance.clone();
+                let state = state.clone();
+                move || {
+                    let has_more = advance();
+                    if !has_more {
+                        state.dismiss();
+                    }
+                }
+            };
 
-    let mut body: Vec<View> = Vec::new();
-    body.push(
-        Row(Modifier::new()
-            .fill_max_width()
-            .align_items(AlignItems::Center))
-        .child((
-            icon(Symbols::CLOUD_DOWNLOAD, 22.0, th.primary),
-            Box(Modifier::new().width(10.0)),
-            Text("Add Torrent").size(18.0).color(th.on_surface),
-        )),
-    );
-    body.push(Box(Modifier::new().height(10.0)));
-    body.push(Text(&name).size(13.0).color(th.on_surface_variant));
-    body.push(
-        Text(format!(
-            "{} \u{00B7} {}",
-            crate::ui::utils::format_bytes(total_size),
-            format!(
-                "{} file{}",
-                files.len(),
-                if files.len() == 1 { "" } else { "s" }
-            )
-        ))
-        .size(12.0)
-        .color(th.on_surface_variant),
-    );
-    body.push(Box(Modifier::new().height(14.0)));
-    body.push(
-        Row(Modifier::new()
-            .fill_max_width()
-            .align_items(AlignItems::Center))
-        .child((
-            Text("Download to:")
+            let file_rows: Vec<View> = files
+                .iter()
+                .enumerate()
+                .map(|(i, file)| {
+                    let checked = checks.get(i).copied().unwrap_or(true);
+                    let fi: FileInfo = file.clone();
+                    let file_checks = file_checks.clone();
+                    add_file_row_view(i, fi, checked, file_checks)
+                })
+                .collect();
+
+            let mut body: Vec<View> = Vec::new();
+            body.push(
+                Row(Modifier::new()
+                    .fill_max_width()
+                    .align_items(AlignItems::Center))
+                .child((
+                    icon(Symbols::CLOUD_DOWNLOAD, 22.0, th.primary),
+                    Box(Modifier::new().width(10.0)),
+                    Text("Add Torrent").size(18.0).color(th.on_surface),
+                )),
+            );
+            body.push(Box(Modifier::new().height(10.0)));
+            body.push(Text(&name).size(13.0).color(th.on_surface_variant));
+            body.push(
+                Text(format!(
+                    "{} \u{00B7} {}",
+                    crate::ui::utils::format_bytes(total_size),
+                    format!(
+                        "{} file{}",
+                        files.len(),
+                        if files.len() == 1 { "" } else { "s" }
+                    )
+                ))
                 .size(12.0)
-                .color(th.on_surface_variant)
-                .modifier(Modifier::new().width(110.0)),
-            TextField(
-                "Path",
-                download_path_input.get(),
-                Modifier::new().flex_grow(1.0).height(36.0),
-                Some({
-                    let p = download_path_input.clone();
-                    move |v| p.set(v)
-                }),
-                None::<fn(String)>,
-            ),
-            Box(Modifier::new().width(6.0)),
-            FilledTonalButton(
-                Modifier::new().height(36.0),
-                move || pick_folder(),
-                || Text("Browse"),
-            ),
-        )),
-    );
-    body.push(Box(Modifier::new().height(14.0)));
-    body.push(
-        Row(Modifier::new()
-            .fill_max_width()
-            .align_items(AlignItems::Center))
-        .child((
-            Text("Files:").size(12.0).color(th.on_surface_variant),
-            Spacer(),
-            TextButton(Modifier::new(), move || select_all(), || Text("Select All")),
-            Box(Modifier::new().width(4.0)),
-            TextButton(
-                Modifier::new(),
-                move || select_none(),
-                || Text("Select None"),
-            ),
-        )),
-    );
-    body.push(Surface(
-        Modifier::new()
-            .fill_max_width()
-            .height(220.0)
-            .background(th.surface_container_high)
-            .border(1.0, th.outline_variant, 10.0)
-            .clip_rounded(10.0),
-        ScrollArea(
-            Modifier::new().fill_max_size(),
-            remember_scroll_state("add_torrent_files"),
-            Column(Modifier::new().fill_max_width().padding(6.0)).child(file_rows),
-        ),
-    ));
-    body.push(Box(Modifier::new().height(16.0)));
-    body.push(
-        Row(Modifier::new()
-            .align_items(AlignItems::Center)
-            .justify_content(JustifyContent::End))
-        .child((
-            TextButton(Modifier::new(), move || on_cancel(), || Text("Cancel")),
-            Box(Modifier::new().width(8.0)),
-            FilledButton(Modifier::new(), move || on_confirm(), || Text("Add")),
-        )),
-    );
+                .color(th.on_surface_variant),
+            );
+            body.push(Box(Modifier::new().height(14.0)));
+            body.push(
+                Row(Modifier::new()
+                    .fill_max_width()
+                    .align_items(AlignItems::Center))
+                .child((
+                    Text("Download to:")
+                        .size(12.0)
+                        .color(th.on_surface_variant)
+                        .modifier(Modifier::new().width(110.0)),
+                    TextField(
+                        "Path",
+                        download_path_input.get(),
+                        Modifier::new().flex_grow(1.0).height(36.0),
+                        Some({
+                            let p = download_path_input.clone();
+                            move |v| p.set(v)
+                        }),
+                        None::<fn(String)>,
+                    ),
+                    Box(Modifier::new().width(6.0)),
+                    FilledTonalButton(
+                        Modifier::new().height(36.0),
+                        move || pick_folder(),
+                        || Text("Browse"),
+                    ),
+                )),
+            );
+            body.push(Box(Modifier::new().height(14.0)));
+            body.push(
+                Row(Modifier::new()
+                    .fill_max_width()
+                    .align_items(AlignItems::Center))
+                .child((
+                    Text("Files:").size(12.0).color(th.on_surface_variant),
+                    Spacer(),
+                    TextButton(Modifier::new(), move || select_all(), || Text("Select All")),
+                    Box(Modifier::new().width(4.0)),
+                    TextButton(
+                        Modifier::new(),
+                        move || select_none(),
+                        || Text("Select None"),
+                    ),
+                )),
+            );
+            body.push(Surface(
+                Modifier::new()
+                    .fill_max_width()
+                    .height(220.0)
+                    .background(th.surface_container_high)
+                    .border(1.0, th.outline_variant, 10.0)
+                    .clip_rounded(10.0),
+                ScrollArea(
+                    Modifier::new().fill_max_size(),
+                    remember_scroll_state("add_torrent_files"),
+                    Column(Modifier::new().fill_max_width().padding(6.0)).child(file_rows),
+                ),
+            ));
+            body.push(Box(Modifier::new().height(16.0)));
+            body.push(
+                Row(Modifier::new()
+                    .align_items(AlignItems::Center)
+                    .justify_content(JustifyContent::End))
+                .child((
+                    TextButton(Modifier::new(), move || on_cancel(), || Text("Cancel")),
+                    Box(Modifier::new().width(8.0)),
+                    FilledButton(Modifier::new(), move || on_confirm(), || Text("Add")),
+                )),
+            );
+
+            Column(Modifier::new().padding(20.0).min_width(560.0)).child(body)
+        } else {
+            Box(Modifier::new().size(0.0, 0.0))
+        }
+    } else {
+        Box(Modifier::new().size(0.0, 0.0))
+    };
 
     Dialog(
         state.clone(),
         overlay,
         Modifier::new().max_width(620.0).max_height(560.0),
-        Column(Modifier::new().padding(20.0).min_width(560.0)).child(body),
+        content,
     )
 }
 
