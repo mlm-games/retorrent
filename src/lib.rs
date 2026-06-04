@@ -225,19 +225,36 @@ pub extern "C" fn android_main(android_app: winit::platform::android::activity::
 
     rlobkit_dialogs::init();
 
-    let _ = jni_min_helper::jni_with_env(|env| {
-        let ctx = jni_min_helper::android_context();
-        let raw = ctx.as_raw();
-        let jobj = unsafe { jni::objects::JObject::from_raw(env, raw) };
-        rustls_platform_verifier::android::init_with_env(env, jobj)
-    });
-
     if jni_min_helper::android_api_level() >= 33 {
         let _ = jni_min_helper::PermissionRequest::request(
             "Downloads",
             ["android.permission.POST_NOTIFICATIONS"],
         );
     }
+
+    let android_data_dir = jni_min_helper::jni_with_env(|env| -> Result<PathBuf, jni::errors::Error> {
+        let ctx = jni_min_helper::android_context();
+        let file_obj = env
+            .call_method(
+                ctx,
+                jni_str!("getFilesDir"),
+                jni_sig!("()Ljava/io/File;"),
+                &[],
+            )?
+            .l()?;
+        let jpath = env
+            .call_method(
+                &file_obj,
+                jni_str!("getAbsolutePath"),
+                jni_sig!("()Ljava/lang/String;"),
+                &[],
+            )?
+            .l()?;
+        let s: String = JString::cast_local(env, jpath)?.try_to_string(env)?;
+        Ok(PathBuf::from(s))
+    })
+    .unwrap_or_else(|_| PathBuf::from("/data/data/dev.mlm.retorrent"));
+    config::ANDROID_DATA_DIR.set(android_data_dir).ok();
 
     let download_dir = {
         let dir = jni_min_helper::jni_with_env(|env| -> Result<PathBuf, jni::errors::Error> {

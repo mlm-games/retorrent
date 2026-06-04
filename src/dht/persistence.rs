@@ -111,9 +111,14 @@ fn tmp_path_for(path: &Path) -> PathBuf {
 }
 
 pub fn default_persistence_filename() -> Result<PathBuf> {
-    let dir = dirs::data_dir()
-        .ok_or_else(|| Error::Persistence("no data dir".into()))?
-        .join("retorrent")
+    let dir = crate::config::ANDROID_DATA_DIR
+        .get()
+        .cloned()
+        .unwrap_or_else(|| {
+            dirs::data_dir()
+                .unwrap_or_else(|| PathBuf::from("."))
+                .join("retorrent")
+        })
         .join("dht");
     fs::create_dir_all(&dir).map_err(|e| Error::Persistence(e.to_string()))?;
     Ok(dir.join("dht.json"))

@@ -115,7 +115,6 @@ rlobkit-dialogs = { path = "../rlobkit/rlobkit-dialogs" }
 jni = "0.22.4"
 jni-min-helper = "0.4"
 ndk-context = "0.1"
-rustls-platform-verifier = "0.7"
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 wasm-bindgen = "0.2"

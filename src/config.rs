@@ -1,5 +1,8 @@
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
+use std::sync::OnceLock;
+
+pub static ANDROID_DATA_DIR: OnceLock<PathBuf> = OnceLock::new();
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Config {
@@ -95,17 +98,22 @@ impl Config {
         Ok(())
     }
 
+    fn data_dir() -> PathBuf {
+        ANDROID_DATA_DIR
+            .get()
+            .cloned()
+            .unwrap_or_else(|| {
+                dirs::data_dir()
+                    .unwrap_or_else(|| PathBuf::from("."))
+                    .join("retorrent")
+            })
+    }
+
     fn config_path() -> PathBuf {
-        dirs::config_dir()
-            .unwrap_or_else(|| PathBuf::from("."))
-            .join("retorrent")
-            .join("config.json")
+        Self::data_dir().join("config.json")
     }
 
     pub fn resume_dir() -> PathBuf {
-        dirs::data_dir()
-            .unwrap_or_else(|| PathBuf::from("."))
-            .join("retorrent")
-            .join("resume")
+        Self::data_dir().join("resume")
     }
 }
