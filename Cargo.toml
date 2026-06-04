@@ -22,6 +22,7 @@ package = "dev.mlm.retorrent"
 apk_name = "retorrent"
 build_targets = ["aarch64-linux-android"]
 split_per_abi = true
+java_sources = ["java/"]
 
 [package.metadata.android.application]
 label = "Retorrent"
@@ -36,6 +37,23 @@ name = "android.permission.INTERNET"
 
 [[package.metadata.android.uses_permission]]
 name = "android.permission.ACCESS_NETWORK_STATE"
+
+[[package.metadata.android.uses_permission]]
+name = "android.permission.FOREGROUND_SERVICE"
+
+[[package.metadata.android.uses_permission]]
+name = "android.permission.FOREGROUND_SERVICE_DATA_SYNC"
+
+[[package.metadata.android.uses_permission]]
+name = "android.permission.POST_NOTIFICATIONS"
+
+[[package.metadata.android.uses_permission]]
+name = "android.permission.WAKE_LOCK"
+
+[[package.metadata.android.application.service]]
+name = "dev.mlm.retorrent.TorrentService"
+foreground_service_type = "dataSync"
+exported = false
 
 [dependencies]
 tokio = { version = "1", features = ["full"] }
@@ -95,7 +113,9 @@ winit = "0.30"
 log = "0.4"
 rlobkit-dialogs = { path = "../rlobkit/rlobkit-dialogs" }
 jni = "0.22.4"
+jni-min-helper = "0.4"
 ndk-context = "0.1"
+rustls-platform-verifier = "0.7"
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 wasm-bindgen = "0.2"

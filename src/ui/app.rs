@@ -3,6 +3,9 @@ use std::rc::Rc;
 use std::sync::mpsc;
 use std::sync::{Arc, Mutex};
 
+#[cfg(target_os = "android")]
+use crate::android_service;
+
 use repose_core::locals::set_theme_default;
 use repose_core::modifier::{PaddingValues, StateColors};
 use repose_core::prelude::*;
@@ -126,6 +129,8 @@ pub fn app(
     let global_dl: Rc<Signal<u64>> = remember(|| signal(0));
     let global_ul: Rc<Signal<u64>> = remember(|| signal(0));
     let last_refresh: Rc<Signal<web_time::Instant>> = remember(|| signal(web_time::Instant::now()));
+    #[cfg(target_os = "android")]
+    let last_notify: Rc<Signal<web_time::Instant>> = remember(|| signal(web_time::Instant::now()));
 
     let overlay = remember(|| OverlayHandle::new());
     let magnet_state = remember(|| DialogState::new());
@@ -258,6 +263,43 @@ pub fn app(
         global_dl.set(dl_total);
         global_ul.set(ul_total);
         last_refresh.set(now);
+    }
+
+    #[cfg(target_os = "android")]
+    {
+        let now = web_time::Instant::now();
+        if now.duration_since(last_notify.get()) > web_time::Duration::from_secs(2) {
+            last_notify.set(now);
+            let rows = torrents.get();
+            let active = rows
+                .iter()
+                .filter(|t| {
+                    matches!(
+                        t.stats.state,
+                        TorrentState::Downloading | TorrentState::FetchingMetadata
+                    )
+                })
+                .count();
+            let any_active = rows.iter().any(|t| {
+                matches!(
+                    t.stats.state,
+                    TorrentState::Downloading | TorrentState::Seeding
+                )
+            });
+            if any_active {
+                android_service::acquire_wake_lock_if_needed();
+            } else {
+                android_service::release_wake_lock_if_held();
+            }
+            android_service::update_notification(
+                &format!(
+                    "\u{2B07} {}  \u{2B06} {}",
+                    crate::human_bytes(global_dl.get()),
+                    crate::human_bytes(global_ul.get()),
+                ),
+                &format!("{} active / {} torrents", active, rows.len()),
+            );
+        }
     }
 
     #[cfg(any(target_os = "linux", target_os = "windows", target_os = "macos"))]

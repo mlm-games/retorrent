@@ -24,7 +24,10 @@ mod ui;
 #[cfg(any(target_os = "linux", target_os = "windows", target_os = "macos"))]
 mod tray;
 
-
+#[cfg(target_os = "android")]
+mod android_service;
+#[cfg(target_os = "android")]
+use jni::{jni_sig, jni_str};
 
 use anyhow::Result;
 use config::Config;
@@ -208,76 +211,10 @@ pub fn run_desktop_main() -> Result<()> {
 }
 
 #[cfg(target_os = "android")]
-unsafe fn android_external_files_dir() -> Option<PathBuf> {
-    use jni::objects::{JObject, JString};
-
-    let ctx = ndk_context::android_context();
-    if ctx.context().is_null() {
-        return None;
-    }
-    let vm = jni::JavaVM::from_raw(ctx.vm().cast());
-    vm.attach_current_thread::<_, _, jni::errors::Error>(|env| unsafe {
-        let context = JObject::from_raw(env, ctx.context().cast());
-        let file_obj = env
-            .call_method(
-                &context,
-                jni::jni_str!("getExternalFilesDir"),
-                jni::jni_sig!("(Ljava/lang/String;)Ljava/io/File;"),
-                &[jni::objects::JValue::Object(&JObject::null())],
-            )?
-            .l()?;
-        let jpath = env
-            .call_method(
-                &file_obj,
-                jni::jni_str!("getAbsolutePath"),
-                jni::jni_sig!("()Ljava/lang/String;"),
-                &[],
-            )?
-            .l()?;
-        let jstr: JString = JString::cast_local(env, jpath)?;
-        let s: String = jstr.mutf8_chars(env)?.to_string();
-        Ok::<_, jni::errors::Error>(PathBuf::from(s))
-    })
-    .ok()
-}
-
-#[cfg(target_os = "android")]
-unsafe fn android_internal_files_dir() -> Option<PathBuf> {
-    use jni::objects::{JObject, JString};
-
-    let ctx = ndk_context::android_context();
-    if ctx.context().is_null() {
-        return None;
-    }
-    let vm = jni::JavaVM::from_raw(ctx.vm().cast());
-    vm.attach_current_thread::<_, _, jni::errors::Error>(|env| unsafe {
-        let context = JObject::from_raw(env, ctx.context().cast());
-        let file_obj = env
-            .call_method(
-                &context,
-                jni::jni_str!("getFilesDir"),
-                jni::jni_sig!("()Ljava/io/File;"),
-                &[],
-            )?
-            .l()?;
-        let jpath = env
-            .call_method(
-                &file_obj,
-                jni::jni_str!("getAbsolutePath"),
-                jni::jni_sig!("()Ljava/lang/String;"),
-                &[],
-            )?
-            .l()?;
-        let jstr: JString = JString::cast_local(env, jpath)?;
-        let s: String = jstr.mutf8_chars(env)?.to_string();
-        Ok::<_, jni::errors::Error>(PathBuf::from(s))
-    })
-    .ok()
-}
-
-#[cfg(target_os = "android")]
 #[unsafe(no_mangle)]
 pub extern "C" fn android_main(android_app: winit::platform::android::activity::AndroidApp) {
+    use jni::objects::{JObject, JString, JValue};
+
     tracing_subscriber::fmt()
         .with_env_filter(
             tracing_subscriber::EnvFilter::try_from_default_env()
@@ -288,12 +225,48 @@ pub extern "C" fn android_main(android_app: winit::platform::android::activity::
 
     rlobkit_dialogs::init();
 
-    let download_dir = unsafe { android_external_files_dir() }
-        .or_else(|| unsafe { android_internal_files_dir() })
-        .or_else(dirs::data_dir)
+    let _ = jni_min_helper::jni_with_env(|env| {
+        let ctx = jni_min_helper::android_context();
+        let raw = ctx.as_raw();
+        let jobj = unsafe { jni::objects::JObject::from_raw(env, raw) };
+        rustls_platform_verifier::android::init_with_env(env, jobj)
+    });
+
+    if jni_min_helper::android_api_level() >= 33 {
+        let _ = jni_min_helper::PermissionRequest::request(
+            "Downloads",
+            ["android.permission.POST_NOTIFICATIONS"],
+        );
+    }
+
+    let download_dir = {
+        let dir = jni_min_helper::jni_with_env(|env| -> Result<PathBuf, jni::errors::Error> {
+            let ctx = jni_min_helper::android_context();
+            let file_obj = env
+                .call_method(
+                    ctx,
+                    jni_str!("getExternalFilesDir"),
+                    jni_sig!("(Ljava/lang/String;)Ljava/io/File;"),
+                    &[JValue::Object(&JObject::null())],
+                )?
+                .l()?;
+            let jpath = env
+                .call_method(
+                    &file_obj,
+                    jni_str!("getAbsolutePath"),
+                    jni_sig!("()Ljava/lang/String;"),
+                    &[],
+                )?
+                .l()?;
+            let s: String = JString::cast_local(env, jpath)?.try_to_string(env)?;
+            Ok(PathBuf::from(s))
+        })
+        .ok()
         .unwrap_or_else(|| PathBuf::from("/sdcard"))
         .join("Retorrent/downloads");
-    let _ = std::fs::create_dir_all(&download_dir);
+        let _ = std::fs::create_dir_all(&dir);
+        dir
+    };
 
     let rt = Arc::new(
         tokio::runtime::Builder::new_multi_thread()
@@ -302,17 +275,59 @@ pub extern "C" fn android_main(android_app: winit::platform::android::activity::
             .build()
             .expect("Failed to build Tokio runtime"),
     );
-
     let mut config = Config::load_or_default();
     config.download_dir = download_dir;
     let engine = rt.block_on(async { Arc::new(TorrentEngine::new(config).await) });
+    android_service::ENGINE.set(engine.clone()).ok();
+    android_service::RUNTIME.set(rt.clone()).ok();
 
+    let _ = jni_min_helper::jni_with_env(|env| -> Result<(), jni::errors::Error> {
+        let ctx = jni_min_helper::android_context();
+        let intent = env.new_object(jni_str!("android/content/Intent"), jni_sig!("()V"), &[])?;
+        let svc_name = JString::new(env, "dev.mlm.retorrent.TorrentService")?;
+        env.call_method(
+            &intent,
+            jni_str!("setClassName"),
+            jni_sig!("(Landroid/content/Context;Ljava/lang/String;)Landroid/content/Intent;"),
+            &[JValue::from(ctx), JValue::from(&svc_name)],
+        )?;
+        env.call_method(
+            ctx,
+            jni_str!("startService"),
+            jni_sig!("(Landroid/content/Intent;)Landroid/content/ComponentName;"),
+            &[JValue::from(&intent)],
+        )?;
+        Ok(())
+    });
+
+    let engine_for_shutdown = engine.clone();
     let pending: Arc<Mutex<Vec<PendingTorrent>>> = Arc::new(Mutex::new(Vec::new()));
 
     use repose_platform::android::run_android_app;
 
     let _ = run_android_app(android_app, move |sched, _rc| {
         ui::app::app(sched, engine.clone(), rt.clone(), pending.clone())
+    });
+
+    engine_for_shutdown.save_all_resume();
+
+    let _ = jni_min_helper::jni_with_env(|env| -> Result<(), jni::errors::Error> {
+        let ctx = jni_min_helper::android_context();
+        let intent = env.new_object(jni_str!("android/content/Intent"), jni_sig!("()V"), &[])?;
+        let svc_name = JString::new(env, "dev.mlm.retorrent.TorrentService")?;
+        env.call_method(
+            &intent,
+            jni_str!("setClassName"),
+            jni_sig!("(Landroid/content/Context;Ljava/lang/String;)Landroid/content/Intent;"),
+            &[JValue::from(ctx), JValue::from(&svc_name)],
+        )?;
+        env.call_method(
+            ctx,
+            jni_str!("stopService"),
+            jni_sig!("(Landroid/content/Intent;)Z"),
+            &[JValue::from(&intent)],
+        )?;
+        Ok(())
     });
 }
 
