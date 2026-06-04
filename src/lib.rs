@@ -208,7 +208,41 @@ pub fn run_desktop_main() -> Result<()> {
 }
 
 #[cfg(target_os = "android")]
-unsafe fn android_files_dir() -> Option<PathBuf> {
+unsafe fn android_external_files_dir() -> Option<PathBuf> {
+    use jni::objects::{JObject, JString};
+
+    let ctx = ndk_context::android_context();
+    if ctx.context().is_null() {
+        return None;
+    }
+    let vm = jni::JavaVM::from_raw(ctx.vm().cast());
+    vm.attach_current_thread::<_, _, jni::errors::Error>(|env| unsafe {
+        let context = JObject::from_raw(env, ctx.context().cast());
+        let file_obj = env
+            .call_method(
+                &context,
+                jni::jni_str!("getExternalFilesDir"),
+                jni::jni_sig!("(Ljava/lang/String;)Ljava/io/File;"),
+                &[jni::objects::JValue::Object(&JObject::null())],
+            )?
+            .l()?;
+        let jpath = env
+            .call_method(
+                &file_obj,
+                jni::jni_str!("getAbsolutePath"),
+                jni::jni_sig!("()Ljava/lang/String;"),
+                &[],
+            )?
+            .l()?;
+        let jstr: JString = JString::cast_local(env, jpath)?;
+        let s: String = jstr.mutf8_chars(env)?.to_string();
+        Ok::<_, jni::errors::Error>(PathBuf::from(s))
+    })
+    .ok()
+}
+
+#[cfg(target_os = "android")]
+unsafe fn android_internal_files_dir() -> Option<PathBuf> {
     use jni::objects::{JObject, JString};
 
     let ctx = ndk_context::android_context();
@@ -244,20 +278,21 @@ unsafe fn android_files_dir() -> Option<PathBuf> {
 #[cfg(target_os = "android")]
 #[unsafe(no_mangle)]
 pub extern "C" fn android_main(android_app: winit::platform::android::activity::AndroidApp) {
-    android_logger::init_once(
-        android_logger::Config::default()
-            .with_max_level(log::LevelFilter::Info)
-            .with_tag("Retorrent"),
-    );
-    log::info!("Retorrent starting on Android");
+    tracing_subscriber::fmt()
+        .with_env_filter(
+            tracing_subscriber::EnvFilter::try_from_default_env()
+                .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info")),
+        )
+        .init();
+    tracing::info!("Retorrent starting on Android");
 
     rlobkit_dialogs::init();
 
-    let files_dir = unsafe { android_files_dir() }
+    let download_dir = unsafe { android_external_files_dir() }
+        .or_else(|| unsafe { android_internal_files_dir() })
         .or_else(dirs::data_dir)
-        .unwrap_or_else(|| PathBuf::from("/sdcard"));
-
-    let download_dir = files_dir.join("Retorrent/downloads");
+        .unwrap_or_else(|| PathBuf::from("/sdcard"))
+        .join("Retorrent/downloads");
     let _ = std::fs::create_dir_all(&download_dir);
 
     let rt = Arc::new(

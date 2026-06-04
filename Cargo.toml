@@ -31,6 +31,12 @@ fullscreen = true
 min_sdk_version = 26
 target_sdk_version = 35
 
+[[package.metadata.android.uses_permission]]
+name = "android.permission.INTERNET"
+
+[[package.metadata.android.uses_permission]]
+name = "android.permission.ACCESS_NETWORK_STATE"
+
 [dependencies]
 tokio = { version = "1", features = ["full"] }
 futures = "0.3"

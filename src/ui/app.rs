@@ -1926,11 +1926,7 @@ fn add_torrent_dialog_view(
                 move || {
                     let pending = pending.clone();
                     std::thread::spawn(move || {
-                        #[cfg(any(
-                            target_os = "linux",
-                            target_os = "windows",
-                            target_os = "macos"
-                        ))]
+                        #[cfg(not(target_os = "android"))]
                         if let Some(folder) =
                             rlobkit_dialogs::blocking_pick_directory("Select Download Directory")
                         {
