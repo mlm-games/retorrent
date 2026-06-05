@@ -5,6 +5,68 @@ use std::io::Cursor;
 use std::net::{Ipv4Addr, SocketAddrV4};
 use tokio::net::TcpStream;
 
+/// Tracks the state of an in-progress ut_metadata exchange.
+pub struct MetadataState {
+    /// Received data for each piece (None = not yet received).
+    pub pieces: Vec<Option<Vec<u8>>>,
+    /// Total size of the info-dict, learned from the first data message.
+    pub total_size: usize,
+    /// Number of pieces = total_size.div_ceil(16 * 1024).
+    pub num_pieces: usize,
+    /// The info-hash to verify the assembled metadata against.
+    pub info_hash: InfoHash,
+}
+
+impl MetadataState {
+    pub fn new(info_hash: InfoHash) -> Self {
+        Self {
+            pieces: Vec::new(),
+            total_size: 0,
+            num_pieces: 0,
+            info_hash,
+        }
+    }
+
+    /// Set the total size from the first data message and resize the piece buffer.
+    pub fn set_total_size(&mut self, total_size: usize) {
+        self.total_size = total_size;
+        self.num_pieces = total_size.div_ceil(BLOCK_SIZE as usize);
+        self.pieces = vec![None; self.num_pieces];
+    }
+
+    /// Store a received piece. Returns true if all pieces are now present.
+    pub fn store_piece(&mut self, index: usize, data: Vec<u8>) -> bool {
+        if index < self.pieces.len() {
+            self.pieces[index] = Some(data);
+        }
+        self.pieces.iter().all(|p| p.is_some())
+    }
+
+    /// Assemble all received pieces into the raw info dict.
+    pub fn assemble(&self) -> Option<Vec<u8>> {
+        if !self.pieces.iter().all(|p| p.is_some()) {
+            return None;
+        }
+        let mut result = Vec::with_capacity(self.total_size);
+        for piece in &self.pieces {
+            if let Some(data) = piece {
+                result.extend_from_slice(data);
+            }
+        }
+        result.truncate(self.total_size);
+        Some(result)
+    }
+
+    /// Verify the assembled metadata against the info_hash.
+    pub fn verify(&self, data: &[u8]) -> bool {
+        use sha1::Digest;
+        let mut hasher = sha1::Sha1::new();
+        sha1::Digest::update(&mut hasher, data);
+        let result = hasher.finalize();
+        result.as_slice() == self.info_hash.as_bytes()
+    }
+}
+
 #[derive(Debug)]
 pub enum PeerMessage {
     KeepAlive,
@@ -38,12 +100,14 @@ pub enum PeerMessage {
 
 impl PeerMessage {
     /// Build the BEP-10 extended-handshake payload.
+    /// Advertises `ut_pex` (id=1) and `ut_metadata` (id=2).
     pub fn build_extended_handshake_payload(reqq: u32) -> Vec<u8> {
         use crate::bencode::{BencodeParser, BencodeValue};
         use std::collections::BTreeMap;
 
         let mut m = BTreeMap::new();
         m.insert("ut_pex".to_string(), BencodeValue::Integer(1));
+        m.insert("ut_metadata".to_string(), BencodeValue::Integer(2));
         let mut top = BTreeMap::new();
         top.insert("m".to_string(), BencodeValue::Dict(m));
         top.insert(
@@ -54,16 +118,31 @@ impl PeerMessage {
         BencodeParser::encode(&BencodeValue::Dict(top))
     }
 
-    /// Parse the peer's extended handshake. Returns their `ut_pex` extension
-    /// id if they advertise it.
-    pub fn parse_extended_handshake(payload: &[u8]) -> Option<u8> {
+    /// Parse the peer's extended handshake.
+    /// Returns `(ut_pex_id, ut_metadata_id)` — both `None` when absent.
+    pub fn parse_extended_handshake(payload: &[u8]) -> (Option<u8>, Option<u8>) {
         use crate::bencode::BencodeParser;
-        let decoded = BencodeParser::parse(payload).ok()?;
-        let dict = decoded.as_dict()?;
-        let m = dict.get("m")?.as_dict()?;
-        m.get("ut_pex")
+        let decoded = match BencodeParser::parse(payload) {
+            Ok(v) => v,
+            Err(_) => return (None, None),
+        };
+        let dict = match decoded.as_dict() {
+            Some(d) => d,
+            None => return (None, None),
+        };
+        let m = match dict.get("m").and_then(|v| v.as_dict()) {
+            Some(m) => m,
+            None => return (None, None),
+        };
+        let pex_id = m
+            .get("ut_pex")
             .and_then(|v| v.as_integer())
-            .map(|i| i as u8)
+            .map(|i| i as u8);
+        let metadata_id = m
+            .get("ut_metadata")
+            .and_then(|v| v.as_integer())
+            .map(|i| i as u8);
+        (pex_id, metadata_id)
     }
 
     pub fn build_pex_payload(added: &[SocketAddrV4], dropped: &[SocketAddrV4]) -> Vec<u8> {
@@ -304,6 +383,116 @@ impl PeerMessage {
 
         (added, dropped)
     }
+
+    // ── BEP-9 ut_metadata ────────────────────────────────────────────
+
+    pub fn build_metadata_request(piece: usize) -> Vec<u8> {
+        use crate::bencode::{BencodeParser, BencodeValue};
+        use std::collections::BTreeMap;
+        let mut dict = BTreeMap::new();
+        dict.insert("msg_type".to_string(), BencodeValue::Integer(0));
+        dict.insert("piece".to_string(), BencodeValue::Integer(piece as i64));
+        BencodeParser::encode(&BencodeValue::Dict(dict))
+    }
+
+    pub fn build_metadata_data(piece: usize, total_size: Option<usize>, data: &[u8]) -> Vec<u8> {
+        use crate::bencode::{BencodeParser, BencodeValue};
+        use std::collections::BTreeMap;
+        let mut dict = BTreeMap::new();
+        dict.insert("msg_type".to_string(), BencodeValue::Integer(1));
+        dict.insert("piece".to_string(), BencodeValue::Integer(piece as i64));
+        if let Some(ts) = total_size {
+            dict.insert("total_size".to_string(), BencodeValue::Integer(ts as i64));
+        }
+        let mut payload = BencodeParser::encode(&BencodeValue::Dict(dict));
+        payload.extend_from_slice(data);
+        payload
+    }
+
+    pub fn build_metadata_reject(piece: usize) -> Vec<u8> {
+        use crate::bencode::{BencodeParser, BencodeValue};
+        use std::collections::BTreeMap;
+        let mut dict = BTreeMap::new();
+        dict.insert("msg_type".to_string(), BencodeValue::Integer(2));
+        dict.insert("piece".to_string(), BencodeValue::Integer(piece as i64));
+        BencodeParser::encode(&BencodeValue::Dict(dict))
+    }
+
+    /// Parse a ut_metadata message payload.
+    /// Returns `(msg_type, piece, total_size, raw_data)`.
+    /// msg_type: 0=request, 1=data, 2=reject.
+    /// total_size is only meaningful for data messages (0 otherwise).
+    pub fn parse_metadata_message(payload: &[u8]) -> (u8, usize, usize, Vec<u8>) {
+        use crate::bencode::{BencodeParser, BencodeValue};
+
+        let dict_end = match find_dict_end(payload) {
+            Some(e) => e,
+            None => return (0xFF, 0, 0, vec![]),
+        };
+        let raw_data = payload[dict_end..].to_vec();
+
+        let decoded = match BencodeParser::parse(&payload[..dict_end]) {
+            Ok(v) => v,
+            Err(_) => return (0xFF, 0, 0, vec![]),
+        };
+        let dict = match decoded.as_dict() {
+            Some(d) => d,
+            None => return (0xFF, 0, 0, vec![]),
+        };
+        let msg_type = dict
+            .get("msg_type")
+            .and_then(|v| v.as_integer())
+            .unwrap_or(0xFF) as u8;
+        let piece = dict
+            .get("piece")
+            .and_then(|v| v.as_integer())
+            .unwrap_or(0) as usize;
+        let total_size = dict
+            .get("total_size")
+            .and_then(|v| v.as_integer())
+            .unwrap_or(0) as usize;
+        (msg_type, piece, total_size, raw_data)
+    }
+}
+
+/// Scan to the end of the top-level bencoded dict, correctly handling
+/// the length-prefixed string encoding so that `d`/`e` bytes inside
+/// string values are ignored.
+fn find_dict_end(data: &[u8]) -> Option<usize> {
+    if data.is_empty() || data[0] != b'd' {
+        return None;
+    }
+    let mut i = 0;
+    let mut depth = 0;
+    while i < data.len() {
+        match data[i] {
+            b'd' => depth += 1,
+            b'e' => {
+                depth -= 1;
+                if depth == 0 {
+                    return Some(i + 1);
+                }
+            }
+            b'i' => {
+                while i < data.len() && data[i] != b'e' {
+                    i += 1;
+                }
+            }
+            b'0'..=b'9' => {
+                let start = i;
+                while i < data.len() && data[i] != b':' {
+                    i += 1;
+                }
+                let len: usize =
+                    std::str::from_utf8(&data[start..i]).ok()?.parse().ok()?;
+                i += 1 + len; // skip ':' and the string content
+                continue;
+            }
+            _ => return None,
+        }
+        i += 1;
+    }
+    None
 }
 
 pub struct PeerConnection {
@@ -320,6 +509,8 @@ pub struct PeerConnection {
     /// arrives. BEP-10 lets us default to 1 if a peer sends PEX before
     /// its handshake, which is what most peers do in practice.
     pub peer_pex_id: Option<u8>,
+    /// Extension id the peer assigned to its `ut_metadata` extension.
+    pub peer_metadata_id: Option<u8>,
 }
 
 impl PeerConnection {
@@ -365,6 +556,7 @@ impl PeerConnection {
             bitfield: Vec::new(),
             addr,
             peer_pex_id: None,
+            peer_metadata_id: None,
         }
     }
 
@@ -376,8 +568,8 @@ impl PeerConnection {
         msg.push(19);
         msg.extend_from_slice(b"BitTorrent protocol");
         let mut reserved = [0u8; 8];
-        reserved[5] = 0x10; // advertise extension protocol (BEP-10)
-        reserved[7] = 0x01; // advertise DHT protocol (BEP-5)
+        reserved[5] = 0x10 | 0x04; // BEP-10 (extension protocol) + BEP-9 (ut_metadata)
+        reserved[7] = 0x01; // BEP-5 (DHT)
         msg.extend_from_slice(&reserved);
         msg.extend_from_slice(info_hash.as_bytes());
         msg.extend_from_slice(&my_peer_id.0);
@@ -438,7 +630,7 @@ impl PeerConnection {
         msg.push(19);
         msg.extend_from_slice(b"BitTorrent protocol");
         let mut reserved = [0u8; 8];
-        reserved[5] = 0x10;
+        reserved[5] = 0x10 | 0x04; // BEP-10 + BEP-9
         msg.extend_from_slice(&reserved);
         msg.extend_from_slice(info_hash.as_bytes());
         msg.extend_from_slice(&my_peer_id.0);
@@ -522,12 +714,13 @@ mod tests {
     #[test]
     fn extended_handshake_roundtrip() {
         let payload = PeerMessage::build_extended_handshake_payload(64);
-        let pex_id = PeerMessage::parse_extended_handshake(&payload);
+        let (pex_id, metadata_id) = PeerMessage::parse_extended_handshake(&payload);
         assert_eq!(pex_id, Some(1), "we should advertise ut_pex at id 1");
+        assert_eq!(metadata_id, Some(2), "we should advertise ut_metadata at id 2");
     }
 
     #[test]
-    fn extended_handshake_missing_ut_pex() {
+    fn extended_handshake_only_ut_metadata() {
         use crate::bencode::{BencodeParser, BencodeValue};
         use std::collections::BTreeMap;
         let mut m = BTreeMap::new();
@@ -535,6 +728,8 @@ mod tests {
         let mut top = BTreeMap::new();
         top.insert("m".to_string(), BencodeValue::Dict(m));
         let payload = BencodeParser::encode(&BencodeValue::Dict(top));
-        assert_eq!(PeerMessage::parse_extended_handshake(&payload), None);
+        let (pex_id, metadata_id) = PeerMessage::parse_extended_handshake(&payload);
+        assert_eq!(pex_id, None);
+        assert_eq!(metadata_id, Some(2));
     }
 }

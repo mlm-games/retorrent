@@ -71,6 +71,10 @@ impl DiskStorage {
         })
     }
 
+    pub fn base_path(&self) -> &Path {
+        &self.base_path
+    }
+
     fn get_write_file(&self, rel_path: &str) -> Result<File> {
         let full_path = self.base_path.join(rel_path);
         if let Some(f) = self.write_files.lock().get(&full_path) {

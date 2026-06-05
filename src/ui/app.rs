@@ -206,21 +206,19 @@ pub fn app(
                 let stats = session.get_stats();
                 dl_total += stats.download_rate;
                 ul_total += stats.upload_rate;
-                let have = session.piece_manager.get_have_vec();
-                let files = session.meta.files.clone();
-                let priorities = session.get_file_priorities();
+                let meta = session.meta.read();
+                let pm = session.piece_manager.read();
+                let have = pm.get_have_vec();
+                let files = meta.files.clone();
                 let mut trackers = Vec::new();
-                if let Some(ref a) = session.meta.announce {
+                if let Some(ref a) = meta.announce {
                     trackers.push(a.clone());
                 }
-                for tier in &session.meta.announce_list {
-                    for url in tier {
-                        if !trackers.contains(url) {
-                            trackers.push(url.clone());
-                        }
-                    }
+                for tier in &meta.announce_list {
+                    trackers.extend(tier.iter().cloned());
                 }
-                let pl = session.meta.piece_length;
+                let pl = meta.piece_length;
+                let priorities = session.get_file_priorities();
                 let display_progress = {
                     let mut total = 0u32;
                     let mut done = 0u32;
@@ -246,11 +244,11 @@ pub fn app(
 
                 rows.push(TorrentRow {
                     info_hash: hash,
-                    name: session.meta.name.clone(),
+                    name: meta.name.clone(),
                     stats,
-                    total_size: session.meta.total_size,
+                    total_size: meta.total_size,
                     have_pieces: have,
-                    num_pieces: session.meta.num_pieces(),
+                    num_pieces: meta.num_pieces(),
                     piece_length: pl,
                     files,
                     trackers,

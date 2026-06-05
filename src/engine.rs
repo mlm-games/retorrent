@@ -188,7 +188,7 @@ impl TorrentEngine {
         if let Some((_, session)) = self.sessions.remove(info_hash) {
             session.stop();
             if delete_files {
-                let _ = session.storage.delete_files();
+                let _ = session.storage.read().delete_files();
             }
             let _ = ResumeData::remove_from_dir(&info_hash.to_hex(), &Config::resume_dir());
         }
