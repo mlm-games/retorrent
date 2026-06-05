@@ -13,10 +13,10 @@
 //! the dependency footprint small. The work is dominated by network
 //! round-trips, not blocking on a single socket.
 
-use std::net::{Ipv4Addr, SocketAddrV4, UdpSocket};
+use std::net::{Ipv4Addr, SocketAddr, SocketAddrV4, UdpSocket};
 use std::time::Duration;
 
-use igd::{PortMappingProtocol, SearchOptions};
+use igd_next::{PortMappingProtocol, SearchOptions};
 use tracing::{debug, info, warn};
 
 const REFRESH_INTERVAL: Duration = Duration::from_secs(30 * 60);
@@ -41,7 +41,7 @@ fn local_ipv4() -> Option<Ipv4Addr> {
 async fn map_port(
     protocol: PortMappingProtocol,
     external_port: u16,
-    local_addr: SocketAddrV4,
+    local_addr: SocketAddr,
 ) -> Result<bool, String> {
     if external_port == 0 {
         return Err("external_port is 0".into());
@@ -52,7 +52,7 @@ async fn map_port(
             timeout: Some(Duration::from_secs(2)),
             ..Default::default()
         };
-        let gateway = match igd::search_gateway(opts) {
+        let gateway = match igd_next::search_gateway(opts) {
             Ok(g) => g,
             Err(e) => {
                 debug!("no IGD gateway found: {}", e);
@@ -78,7 +78,10 @@ async fn map_port(
                 Ok(true)
             }
             Err(e) => {
-                warn!("UPnP: failed to map {} :{}: {}", protocol_name, external_port, e);
+                warn!(
+                    "UPnP: failed to map {} :{}: {}",
+                    protocol_name, external_port, e
+                );
                 Err(format!("add_port: {}", e))
             }
         }
@@ -101,7 +104,7 @@ pub async fn run(port: u16, cancel: tokio_util::sync::CancellationToken) {
             return;
         }
     };
-    let local_addr = SocketAddrV4::new(local_ip, port);
+    let local_addr = SocketAddr::V4(SocketAddrV4::new(local_ip, port));
 
     let mut interval = tokio::time::interval(REFRESH_INTERVAL);
     interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
@@ -137,7 +140,7 @@ mod tests {
             .enable_all()
             .build()
             .unwrap();
-        let local = SocketAddrV4::new(Ipv4Addr::new(127, 0, 0, 1), 0);
+        let local = SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::new(127, 0, 0, 1), 0));
         let res = rt.block_on(map_port(PortMappingProtocol::TCP, 0, local));
         assert!(res.is_err());
     }
