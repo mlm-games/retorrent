@@ -3,6 +3,7 @@ use crate::types::*;
 use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
 use std::io::Cursor;
 use std::net::{Ipv4Addr, SocketAddrV4};
+use std::time::Instant;
 use tokio::net::TcpStream;
 
 /// Tracks the state of an in-progress ut_metadata exchange.
@@ -101,7 +102,7 @@ pub enum PeerMessage {
 impl PeerMessage {
     /// Build the BEP-10 extended-handshake payload.
     /// Advertises `ut_pex` (id=1) and `ut_metadata` (id=2).
-    pub fn build_extended_handshake_payload(reqq: u32) -> Vec<u8> {
+    pub fn build_extended_handshake_payload(reqq: u32, metadata_size: Option<usize>) -> Vec<u8> {
         use crate::bencode::{BencodeParser, BencodeValue};
         use std::collections::BTreeMap;
 
@@ -115,24 +116,27 @@ impl PeerMessage {
             BencodeValue::ByteString(b"retorrent-0.1.0".to_vec()),
         );
         top.insert("reqq".to_string(), BencodeValue::Integer(reqq as i64));
+        if let Some(size) = metadata_size {
+            top.insert("metadata_size".to_string(), BencodeValue::Integer(size as i64));
+        }
         BencodeParser::encode(&BencodeValue::Dict(top))
     }
 
     /// Parse the peer's extended handshake.
-    /// Returns `(ut_pex_id, ut_metadata_id)` — both `None` when absent.
-    pub fn parse_extended_handshake(payload: &[u8]) -> (Option<u8>, Option<u8>) {
+    /// Returns `(ut_pex_id, ut_metadata_id, metadata_size)`.
+    pub fn parse_extended_handshake(payload: &[u8]) -> (Option<u8>, Option<u8>, Option<usize>) {
         use crate::bencode::BencodeParser;
         let decoded = match BencodeParser::parse(payload) {
             Ok(v) => v,
-            Err(_) => return (None, None),
+            Err(_) => return (None, None, None),
         };
         let dict = match decoded.as_dict() {
             Some(d) => d,
-            None => return (None, None),
+            None => return (None, None, None),
         };
         let m = match dict.get("m").and_then(|v| v.as_dict()) {
             Some(m) => m,
-            None => return (None, None),
+            None => return (None, None, None),
         };
         let pex_id = m
             .get("ut_pex")
@@ -142,7 +146,11 @@ impl PeerMessage {
             .get("ut_metadata")
             .and_then(|v| v.as_integer())
             .map(|i| i as u8);
-        (pex_id, metadata_id)
+        let metadata_size = dict
+            .get("metadata_size")
+            .and_then(|v| v.as_integer())
+            .map(|i| i as usize);
+        (pex_id, metadata_id, metadata_size)
     }
 
     pub fn build_pex_payload(added: &[SocketAddrV4], dropped: &[SocketAddrV4]) -> Vec<u8> {
@@ -511,6 +519,15 @@ pub struct PeerConnection {
     pub peer_pex_id: Option<u8>,
     /// Extension id the peer assigned to its `ut_metadata` extension.
     pub peer_metadata_id: Option<u8>,
+    /// Metadata pieces we have requested from this peer and are awaiting
+    /// a response for. Used to ignore unsolicited data messages.
+    pub metadata_sent_requests: Vec<usize>,
+    /// If set, the peer has recently rejected a metadata request;
+    /// don't ask again until this instant.
+    pub metadata_reject_until: Option<Instant>,
+    /// When serving metadata, the last time we sent a data response.
+    /// Used to rate-limit responses to avoid send-buffer bloat.
+    pub metadata_last_response: Option<Instant>,
 }
 
 impl PeerConnection {
@@ -557,6 +574,9 @@ impl PeerConnection {
             addr,
             peer_pex_id: None,
             peer_metadata_id: None,
+            metadata_sent_requests: Vec::new(),
+            metadata_reject_until: None,
+            metadata_last_response: None,
         }
     }
 
@@ -713,10 +733,11 @@ mod tests {
 
     #[test]
     fn extended_handshake_roundtrip() {
-        let payload = PeerMessage::build_extended_handshake_payload(64);
-        let (pex_id, metadata_id) = PeerMessage::parse_extended_handshake(&payload);
+        let payload = PeerMessage::build_extended_handshake_payload(64, None);
+        let (pex_id, metadata_id, metadata_size) = PeerMessage::parse_extended_handshake(&payload);
         assert_eq!(pex_id, Some(1), "we should advertise ut_pex at id 1");
         assert_eq!(metadata_id, Some(2), "we should advertise ut_metadata at id 2");
+        assert_eq!(metadata_size, None);
     }
 
     #[test]
@@ -728,8 +749,9 @@ mod tests {
         let mut top = BTreeMap::new();
         top.insert("m".to_string(), BencodeValue::Dict(m));
         let payload = BencodeParser::encode(&BencodeValue::Dict(top));
-        let (pex_id, metadata_id) = PeerMessage::parse_extended_handshake(&payload);
+        let (pex_id, metadata_id, metadata_size) = PeerMessage::parse_extended_handshake(&payload);
         assert_eq!(pex_id, None);
         assert_eq!(metadata_id, Some(2));
+        assert_eq!(metadata_size, None);
     }
 }

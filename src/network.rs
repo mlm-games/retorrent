@@ -537,7 +537,11 @@ impl TorrentSession {
 
         // BEP-10 extended handshake. Must be sent before any other extended
         // message. We advertise ut_pex (id=1).
-        let hs = PeerMessage::build_extended_handshake_payload(self.config.pipeline_depth as u32);
+        let meta_size = self.torrent_bytes.lock().as_ref().map(|b| b.len());
+        let hs = PeerMessage::build_extended_handshake_payload(
+            self.config.pipeline_depth as u32,
+            meta_size,
+        );
         conn.send_message(&PeerMessage::Extended { id: 0, payload: hs })
             .await?;
 
@@ -788,7 +792,7 @@ impl TorrentSession {
                     conn.bitfield = bf.clone();
                 }
                 PeerMessage::Extended { id: 0, payload } => {
-                    let (pex_id, metadata_id) =
+                    let (pex_id, metadata_id, metadata_size) =
                         PeerMessage::parse_extended_handshake(&payload);
                     if let Some(pex_id) = pex_id {
                         conn.peer_pex_id = Some(pex_id);
@@ -796,18 +800,34 @@ impl TorrentSession {
                     if let Some(metadata_id) = metadata_id {
                         conn.peer_metadata_id = Some(metadata_id);
                         if self.meta.read().num_pieces() == 0 {
-                            let request_piece = {
-                                let md = self.metadata_state.lock();
-                                md.as_ref()
-                                    .and_then(|ms| ms.pieces.iter().position(|p| p.is_none()))
-                                    .unwrap_or(0)
-                            };
-                            let req = PeerMessage::build_metadata_request(request_piece);
-                            conn.send_message(&PeerMessage::Extended {
-                                id: metadata_id,
-                                payload: req,
-                            })
-                            .await?;
+                            // Don't ask if peer is in back-off from a prior reject.
+                            let in_backoff = conn.metadata_reject_until.map_or(false, |t| {
+                                t > std::time::Instant::now()
+                            });
+                            if !in_backoff {
+                                // Pre-allocate metadata buffer from peer's advertised size.
+                                if let Some(size) = metadata_size {
+                                    let mut md = self.metadata_state.lock();
+                                    if let Some(ref mut ms) = *md {
+                                        if ms.total_size == 0 {
+                                            ms.set_total_size(size);
+                                        }
+                                    }
+                                }
+                                let request_piece = {
+                                    let md = self.metadata_state.lock();
+                                    md.as_ref()
+                                        .and_then(|ms| ms.pieces.iter().position(|p| p.is_none()))
+                                        .unwrap_or(0)
+                                };
+                                let req = PeerMessage::build_metadata_request(request_piece);
+                                conn.send_message(&PeerMessage::Extended {
+                                    id: metadata_id,
+                                    payload: req,
+                                })
+                                .await?;
+                                conn.metadata_sent_requests.push(request_piece);
+                            }
                         }
                     }
                 }
@@ -842,14 +862,34 @@ impl TorrentSession {
                                             } else {
                                                 None
                                             };
-                                            let resp = PeerMessage::build_metadata_data(
-                                                piece, total_size, chunk,
-                                            );
-                                            conn.send_message(&PeerMessage::Extended {
-                                                id,
-                                                payload: resp,
-                                            })
-                                            .await?;
+                                            // Rate-limit responses to avoid send-buffer bloat.
+                                            let can_respond = conn
+                                                .metadata_last_response
+                                                .map_or(true, |t| {
+                                                    t.elapsed()
+                                                        > std::time::Duration::from_millis(100)
+                                                });
+                                            if can_respond {
+                                                let resp = PeerMessage::build_metadata_data(
+                                                    piece, total_size, chunk,
+                                                );
+                                                conn.send_message(&PeerMessage::Extended {
+                                                    id,
+                                                    payload: resp,
+                                                })
+                                                .await?;
+                                                conn.metadata_last_response =
+                                                    Some(std::time::Instant::now());
+                                            } else {
+                                                let reject = PeerMessage::build_metadata_reject(
+                                                    piece,
+                                                );
+                                                conn.send_message(&PeerMessage::Extended {
+                                                    id,
+                                                    payload: reject,
+                                                })
+                                                .await?;
+                                            }
                                         } else {
                                             let reject =
                                                 PeerMessage::build_metadata_reject(piece);
@@ -871,6 +911,21 @@ impl TorrentSession {
                             }
                              1 => {
                                 // Data message: store metadata piece.
+                                // Dedup guard: only accept data for pieces we requested.
+                                let idx = conn
+                                    .metadata_sent_requests
+                                    .iter()
+                                    .position(|p| *p == piece);
+                                if idx.is_none() {
+                                    tracing::debug!(
+                                        "Ignoring unsolicited metadata piece {} from {}",
+                                        piece,
+                                        conn.addr
+                                    );
+                                    continue;
+                                }
+                                conn.metadata_sent_requests.swap_remove(idx.unwrap());
+
                                 let (need_next, maybe_assembled) = {
                                     let mut md_guard = self.metadata_state.lock();
                                     if let Some(ref mut ms) = *md_guard {
@@ -924,16 +979,25 @@ impl TorrentSession {
                                     break;
                                 }
                                 if let Some((next, ext_id)) = need_next {
-                                    let req = PeerMessage::build_metadata_request(next);
-                                    conn.send_message(&PeerMessage::Extended {
-                                        id: ext_id,
-                                        payload: req,
-                                    })
-                                    .await?;
+                                    let in_backoff = conn.metadata_reject_until.map_or(false, |t| {
+                                        t > std::time::Instant::now()
+                                    });
+                                    if !in_backoff {
+                                        let req = PeerMessage::build_metadata_request(next);
+                                        conn.send_message(&PeerMessage::Extended {
+                                            id: ext_id,
+                                            payload: req,
+                                        })
+                                        .await?;
+                                        conn.metadata_sent_requests.push(next);
+                                    }
                                 }
                             }
-                            2 => {
+                             2 => {
                                 // Reject: peer doesn't have this piece.
+                                conn.metadata_sent_requests.retain(|p| *p != piece);
+                                conn.metadata_reject_until =
+                                    Some(std::time::Instant::now() + std::time::Duration::from_secs(60));
                                 tracing::debug!(
                                     "Peer {} rejected metadata piece {}",
                                     conn.addr,
