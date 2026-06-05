@@ -3555,6 +3555,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "973443cf09a9c8656b574a866ab68dfa19f0867d0340648c7d2f6a71b8a8ea68"
 
 [[package]]
+name = "rapidhash"
+version = "4.4.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b5e48930979c155e2f33aa36ab3119b5ee81332beb6482199a8ecd6029b80b59"
+dependencies = [
+ "rustversion",
+]
+
+[[package]]
 name = "raw-window-handle"
 version = "0.5.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3664,7 +3673,7 @@ checksum = "19b30a45b0cd0bcca8037f3d0dc3421eaf95327a17cad11964fb8179b4fc4832"
 
 [[package]]
 name = "repose-core"
-version = "0.17.4"
+version = "0.17.5"
 dependencies = [
  "bitflags 2.12.1",
  "log",
@@ -3679,7 +3688,7 @@ dependencies = [
 
 [[package]]
 name = "repose-devtools"
-version = "0.17.4"
+version = "0.17.5"
 dependencies = [
  "log",
  "repose-core",
@@ -3688,7 +3697,7 @@ dependencies = [
 
 [[package]]
 name = "repose-macros"
-version = "0.17.4"
+version = "0.17.5"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -3697,7 +3706,7 @@ dependencies = [
 
 [[package]]
 name = "repose-material"
-version = "0.17.4"
+version = "0.17.5"
 dependencies = [
  "repose-core",
  "repose-text",
@@ -3707,7 +3716,7 @@ dependencies = [
 
 [[package]]
 name = "repose-navigation"
-version = "0.17.4"
+version = "0.17.5"
 dependencies = [
  "log",
  "repose-core",
@@ -3718,7 +3727,7 @@ dependencies = [
 
 [[package]]
 name = "repose-platform"
-version = "0.17.4"
+version = "0.17.5"
 dependencies = [
  "accesskit",
  "accesskit_winit",
@@ -3745,7 +3754,7 @@ dependencies = [
 
 [[package]]
 name = "repose-render-wgpu"
-version = "0.17.4"
+version = "0.17.5"
 dependencies = [
  "ab_glyph",
  "anyhow",
@@ -3763,21 +3772,21 @@ dependencies = [
 
 [[package]]
 name = "repose-text"
-version = "0.17.4"
+version = "0.17.5"
 dependencies = [
- "ahash",
  "cosmic-text",
  "fontdb",
  "once_cell",
+ "rapidhash",
  "unicode-segmentation",
 ]
 
 [[package]]
 name = "repose-tree"
-version = "0.17.4"
+version = "0.17.5"
 dependencies = [
- "ahash",
  "log",
+ "rapidhash",
  "repose-core",
  "rustc-hash 2.1.2",
  "slotmap",
@@ -3786,7 +3795,7 @@ dependencies = [
 
 [[package]]
 name = "repose-ui"
-version = "0.17.4"
+version = "0.17.5"
 dependencies = [
  "ab_glyph",
  "fontdb",

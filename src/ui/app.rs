@@ -1818,14 +1818,6 @@ fn settings_dialog_view(
                                 c.set(nc);
                             })
                         }),
-                        ("Encryption", cfg.enable_encryption, {
-                            let c = config.clone();
-                            Rc::new(move |v| {
-                                let mut nc = c.get();
-                                nc.enable_encryption = v;
-                                c.set(nc);
-                            })
-                        }),
                         ("Auto Resume", cfg.auto_resume, {
                             let c = config.clone();
                             Rc::new(move |v| {
