@@ -259,113 +259,25 @@ pub extern "C" fn android_main(android_app: winit::platform::android::activity::
         );
     }
 
-    // Read the intent that started the Activity (e.g., opening a .torrent file)
-    match jni_min_helper::jni_with_env(|env| -> Result<(), jni::errors::Error> {
-        let ctx = jni_min_helper::android_context();
-        let intent = env
-            .call_method(
-                ctx,
-                jni_str!("getIntent"),
-                jni_sig!("()Landroid/content/Intent;"),
+    // Read the launch intent
+    let _ = jni_min_helper::jni_with_env(|env| -> Result<(), jni::errors::Error> {
+        let cls = env.find_class(jni_str!("dev/mlm/retorrent/RetorrentActivity"))?;
+        let data = env
+            .call_static_method(
+                cls,
+                jni_str!("getAndClearPendingLaunchIntent"),
+                jni_sig!("()[B"),
                 &[],
             )?
             .l()?;
-        if intent.is_null() {
-            return Ok(());
+        if !data.is_null() {
+            let bytes =
+                env.convert_byte_array(&unsafe { jni::objects::JByteArray::from_raw(env, *data) })?;
+            repose_platform::push_deeplink(bytes);
+            tracing::info!("init_deeplink: pushed launch intent");
         }
-        let action_obj = env
-            .call_method(
-                &intent,
-                jni_str!("getAction"),
-                jni_sig!("()Ljava/lang/String;"),
-                &[],
-            )?
-            .l()?;
-        let is_view = if !action_obj.is_null() {
-            let s: String = JString::cast_local(env, action_obj)?.try_to_string(env)?;
-            s == "android.intent.action.VIEW"
-        } else {
-            false
-        };
-        if !is_view {
-            tracing::info!("Intent action is not VIEW, skipping torrent data read");
-            return Ok(());
-        }
-        let uri = env
-            .call_method(
-                &intent,
-                jni_str!("getData"),
-                jni_sig!("()Landroid/net/Uri;"),
-                &[],
-            )?
-            .l()?;
-        if uri.is_null() {
-            tracing::info!("VIEW intent has no data URI");
-            return Ok(());
-        }
-        tracing::info!("Processing VIEW intent with data URI");
-        let cr = env
-            .call_method(
-                ctx,
-                jni_str!("getContentResolver"),
-                jni_sig!("()Landroid/content/ContentResolver;"),
-                &[],
-            )?
-            .l()?;
-        let is_obj = env
-            .call_method(
-                &cr,
-                jni_str!("openInputStream"),
-                jni_sig!("(Landroid/net/Uri;)Ljava/io/InputStream;"),
-                &[JValue::from(&uri)],
-            )?
-            .l()?;
-        if is_obj.is_null() {
-            tracing::info!("openInputStream returned null");
-            return Ok(());
-        }
-        let buf = env.new_byte_array(4096)?;
-        let baos = env.new_object(
-            jni_str!("java/io/ByteArrayOutputStream"),
-            jni_sig!("()V"),
-            &[],
-        )?;
-        let mut total = 0;
-        loop {
-            let n = env
-                .call_method(
-                    &is_obj,
-                    jni_str!("read"),
-                    jni_sig!("([B)I"),
-                    &[JValue::from(&buf)],
-                )?
-                .i()?;
-            if n < 0 {
-                break;
-            }
-            total += n as i32;
-            env.call_method(
-                &baos,
-                jni_str!("write"),
-                jni_sig!("([BII)V"),
-                &[JValue::from(&buf), JValue::Int(0), JValue::Int(n)],
-            )?;
-        }
-        env.call_method(&is_obj, jni_str!("close"), jni_sig!("()V"), &[])?;
-        tracing::info!("Read {} bytes from intent URI", total);
-        let result = env
-            .call_method(&baos, jni_str!("toByteArray"), jni_sig!("()[B"), &[])?
-            .l()?;
-        let result_raw = *result;
-        let arr = unsafe { jni::objects::JByteArray::from_raw(env, result_raw) };
-        let bytes = env.convert_byte_array(&arr)?;
-        tracing::info!("Converted {} bytes, queueing torrent", bytes.len());
-        android_service::queue_torrent_bytes(bytes);
         Ok(())
-    }) {
-        Ok(_) => tracing::info!("Intent handling completed"),
-        Err(e) => tracing::error!("Intent handling failed: {e}"),
-    };
+    });
 
     let android_data_dir =
         jni_min_helper::jni_with_env(|env| -> Result<PathBuf, jni::errors::Error> {
@@ -390,7 +302,7 @@ pub extern "C" fn android_main(android_app: winit::platform::android::activity::
             Ok(PathBuf::from(s))
         })
         .unwrap_or_else(|_| PathBuf::from("/data/data/dev.mlm.retorrent"));
-    config::ANDROID_DATA_DIR.set(android_data_dir).ok();
+    config::ANDROID_DATA_DIR.set(android_data_dir.clone()).ok();
 
     let download_dir = {
         let dir = jni_min_helper::jni_with_env(|env| -> Result<PathBuf, jni::errors::Error> {
@@ -415,7 +327,7 @@ pub extern "C" fn android_main(android_app: winit::platform::android::activity::
             Ok(PathBuf::from(s))
         })
         .ok()
-        .unwrap_or_else(|| PathBuf::from("/sdcard"))
+        .unwrap_or_else(|| android_data_dir.clone())
         .join("Retorrent/downloads");
         let _ = std::fs::create_dir_all(&dir);
         dir
@@ -453,6 +365,27 @@ pub extern "C" fn android_main(android_app: winit::platform::android::activity::
         )?;
         Ok(())
     });
+
+    // Register deeplink callback — processes magnets and .torrent files from
+    // both the initial launch intent and any subsequent onNewIntent calls.
+    let engine_clone = engine.clone();
+    let rt_clone = rt.clone();
+    repose_platform::set_on_deeplink(Box::new(move |data: Vec<u8>| {
+        if let Ok(text) = String::from_utf8(data.clone()) {
+            if text.starts_with("magnet:?") {
+                tracing::info!("deeplink: magnet {}", &text[..80.min(text.len())]);
+                match engine_clone.add_torrent_from_magnet(&text, None) {
+                    Ok(hash) => {
+                        engine_clone.start_torrent(&hash, &rt_clone);
+                    }
+                    Err(e) => tracing::error!("deeplink: add magnet failed: {e}"),
+                }
+                return;
+            }
+        }
+        tracing::info!("deeplink: {} bytes as .torrent", data.len());
+        android_service::queue_torrent_bytes(data);
+    }));
 
     let engine_for_shutdown = engine.clone();
     let pending: Arc<Mutex<Vec<PendingTorrent>>> = Arc::new(Mutex::new(Vec::new()));

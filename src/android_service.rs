@@ -1,10 +1,13 @@
 use crate::engine::TorrentEngine;
+use crate::metainfo::MetaInfo;
+use crate::PendingTorrent;
 use jni::Env;
 use jni::errors;
 use jni::errors::ThrowRuntimeExAndDefault;
-use jni::objects::{Global, JObject, JString, JValue};
-use jni::sys::jint;
+use jni::objects::{Global, JByteArray, JObject, JString, JValue};
+use jni::sys::{jbyteArray, jint};
 use jni::{jni_sig, jni_str};
+use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::Mutex;
 use std::sync::OnceLock;
@@ -14,6 +17,8 @@ pub static RUNTIME: OnceLock<Arc<tokio::runtime::Runtime>> = OnceLock::new();
 
 static SERVICE_GLOBAL: OnceLock<Global<JObject<'static>>> = OnceLock::new();
 static WAKE_LOCK: OnceLock<Mutex<Option<Global<JObject<'static>>>>> = OnceLock::new();
+
+static PENDING_FROM_INTENT: OnceLock<Mutex<Vec<PendingTorrent>>> = OnceLock::new();
 
 pub const STAT_SYS_DOWNLOAD: jint = 17301637;
 
@@ -288,4 +293,57 @@ pub fn release_wake_lock_if_held() {
             Ok::<_, errors::Error>(())
         });
     }
+}
+
+pub fn queue_torrent_bytes(bytes: Vec<u8>) {
+    let meta = match MetaInfo::from_bytes(&bytes) {
+        Ok(m) => m,
+        Err(_) => return,
+    };
+    let suggested_dir = PathBuf::from("/sdcard/Retorrent/downloads");
+    let pending = PendingTorrent {
+        name: meta.name,
+        total_size: meta.total_size,
+        files: meta.files,
+        data: bytes,
+        suggested_dir,
+    };
+    let storage = PENDING_FROM_INTENT.get_or_init(|| Mutex::new(Vec::new()));
+    storage.lock().unwrap().push(pending);
+}
+
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_dev_mlm_retorrent_TorrentService_nativeOnTorrentData<'local>(
+    mut env: jni::EnvUnowned<'local>,
+    _class: jni::sys::jclass,
+    data: jbyteArray,
+) {
+    env.with_env(|env| -> errors::Result<()> {
+        let array = unsafe { JByteArray::from_raw(env, data) };
+        let bytes = env.convert_byte_array(&array)?;
+        queue_torrent_bytes(bytes);
+        Ok(())
+    })
+    .resolve::<ThrowRuntimeExAndDefault>()
+}
+
+pub fn drain_pending_intents() -> Vec<PendingTorrent> {
+    let storage = PENDING_FROM_INTENT.get_or_init(|| Mutex::new(Vec::new()));
+    std::mem::take(&mut *storage.lock().unwrap())
+}
+
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_dev_mlm_retorrent_RetorrentActivity_nativeOnNewIntent<'local>(
+    mut env: jni::EnvUnowned<'local>,
+    _class: jni::sys::jclass,
+    data: jbyteArray,
+) {
+    env.with_env(|env| -> errors::Result<()> {
+        let array = unsafe { JByteArray::from_raw(env, data) };
+        let bytes = env.convert_byte_array(&array)?;
+        tracing::info!("nativeOnNewIntent: forwarding {} bytes to repose deeplink API", bytes.len());
+        repose_platform::push_deeplink(bytes);
+        Ok(())
+    })
+    .resolve::<ThrowRuntimeExAndDefault>()
 }

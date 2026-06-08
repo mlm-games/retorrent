@@ -51,12 +51,19 @@ name = "android.permission.POST_NOTIFICATIONS"
 name = "android.permission.WAKE_LOCK"
 
 [[package.metadata.android.application.activity]]
-name = "android.app.NativeActivity"
+name = "dev.mlm.retorrent.RetorrentActivity"
 exported = true
+launch_mode = "singleTask"
 
+# Launcher icon
+[[package.metadata.android.application.activity.intent_filter]]
+actions = ["android.intent.action.MAIN"]
+categories = ["android.intent.category.LAUNCHER"]
+
+# .torrent files (content:// and file://)
 [[package.metadata.android.application.activity.intent_filter]]
 actions = ["android.intent.action.VIEW"]
-categories = ["android.intent.category.DEFAULT"]
+categories = ["android.intent.category.DEFAULT", "android.intent.category.BROWSABLE"]
 
 [[package.metadata.android.application.activity.intent_filter.data]]
 scheme = "content"
@@ -65,6 +72,14 @@ mime_type = "application/x-bittorrent"
 [[package.metadata.android.application.activity.intent_filter.data]]
 scheme = "file"
 mime_type = "application/x-bittorrent"
+
+# Magnet links
+[[package.metadata.android.application.activity.intent_filter]]
+actions = ["android.intent.action.VIEW"]
+categories = ["android.intent.category.DEFAULT", "android.intent.category.BROWSABLE"]
+
+[[package.metadata.android.application.activity.intent_filter.data]]
+scheme = "magnet"
 
 [[package.metadata.android.application.service]]
 name = "dev.mlm.retorrent.TorrentService"
@@ -85,6 +100,8 @@ repose-ui = { version = "0.17.4" }
 repose-material = { version = "0.17.4" }
 repose-text = { version = "0.17.4" }
 repose-devtools = { version = "0.17.4" }
+repose-platform = { version= "0.17.4" }
+
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 sha1 = "0.11"
@@ -111,6 +128,7 @@ web-time = "1"
 igd-next = "0.17"
 rlobkit-dialogs = { git = "https://github.com/mlm-games/rlobkit", package = "rlobkit-dialogs" }
 
+
 # rlobkit-dialogs = { path = "../rlobkit/rlobkit-dialogs" }
 # repose-core = { path = "../repose/crates/repose-core" }
 # repose-ui = { path = "../repose/crates/repose-ui" }
@@ -126,9 +144,7 @@ open = "5"
 [target.'cfg(any(target_os = "linux", target_os = "windows", target_os = "macos"))'.dependencies]
 gtk = "0.18"
 tray-icon = "0.24"
-repose-platform = { version = "0.17.4", features = [
-    "desktop",
-] }
+
 
 [patch.crates-io]
 winit = { path = "../winit" }
@@ -146,11 +162,8 @@ repose-canvas = { path = "../repose/crates/repose-canvas" }
 repose-docking = { path = "../repose/crates/repose-docking" }
 
 [target.'cfg(target_os = "android")'.dependencies]
-repose-platform = { version = "0.17.4", features = [
-    "android",
-] }
 android_logger = "0.15"
-winit = "0.30"
+winit = { version = "0.30", features = ["android-native-activity"] }
 log = "0.4"
 jni = "0.22.4"
 jni-min-helper = "0.4"
@@ -163,8 +176,5 @@ console_log = "1.0"
 getrandom = { version = "0.4", features = ["wasm_js"] }
 getrandom_03 = { package = "getrandom", version = "0.3", features = ["wasm_js"] }
 log = "0.4"
-repose-platform = { version = "0.17.4", features = [
-    "web",
-] }
 tokio = { version = "1", features = ["rt", "sync", "time", "macros", "io-util"] }
 winit = { version = "0.30", features = ["rwh_05"] }
