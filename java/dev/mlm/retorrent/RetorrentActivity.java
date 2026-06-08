@@ -12,12 +12,16 @@ import java.nio.charset.StandardCharsets;
 
 public class RetorrentActivity extends NativeActivity {
     private static final String TAG = "Retorrent";
-    private static byte[] pendingLaunchIntent;
+    private static final String PENDING_INTENT_FILE = "pending_intent";
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
-        // Capture the launch intent before super.onCreate blocks
-        pendingLaunchIntent = intentToBytes(getIntent());
+        // Save the launch intent to a file before super.onCreate blocks,
+        // so the Rust side can read it on cold start without needing JNI
+        byte[] data = intentToBytes(getIntent());
+        if (data != null) {
+            savePendingIntent(data);
+        }
         super.onCreate(savedInstanceState);
     }
 
@@ -36,6 +40,17 @@ public class RetorrentActivity extends NativeActivity {
         if (data == null) return false;
         nativeOnNewIntent(data);
         return true;
+    }
+
+    private void savePendingIntent(byte[] data) {
+        try {
+            java.io.FileOutputStream fos = openFileOutput(PENDING_INTENT_FILE, MODE_PRIVATE);
+            fos.write(data);
+            fos.close();
+            Log.i(TAG, "savePendingIntent: saved " + data.length + " bytes");
+        } catch (Exception e) {
+            Log.e(TAG, "savePendingIntent failed: " + e.getMessage(), e);
+        }
     }
 
     private byte[] intentToBytes(Intent intent) {
@@ -82,12 +97,6 @@ public class RetorrentActivity extends NativeActivity {
             Log.e(TAG, "intentToBytes failed: " + e.getMessage(), e);
             return null;
         }
-    }
-
-    public static byte[] getAndClearPendingLaunchIntent() {
-        byte[] data = pendingLaunchIntent;
-        pendingLaunchIntent = null;
-        return data;
     }
 
     private static native void nativeOnNewIntent(byte[] data);

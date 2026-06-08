@@ -259,26 +259,6 @@ pub extern "C" fn android_main(android_app: winit::platform::android::activity::
         );
     }
 
-    // Read the launch intent
-    let _ = jni_min_helper::jni_with_env(|env| -> Result<(), jni::errors::Error> {
-        let cls = env.find_class(jni_str!("dev/mlm/retorrent/RetorrentActivity"))?;
-        let data = env
-            .call_static_method(
-                cls,
-                jni_str!("getAndClearPendingLaunchIntent"),
-                jni_sig!("()[B"),
-                &[],
-            )?
-            .l()?;
-        if !data.is_null() {
-            let bytes =
-                env.convert_byte_array(&unsafe { jni::objects::JByteArray::from_raw(env, *data) })?;
-            repose_platform::push_deeplink(bytes);
-            tracing::info!("init_deeplink: pushed launch intent");
-        }
-        Ok(())
-    });
-
     let android_data_dir =
         jni_min_helper::jni_with_env(|env| -> Result<PathBuf, jni::errors::Error> {
             let ctx = jni_min_helper::android_context();
@@ -303,6 +283,19 @@ pub extern "C" fn android_main(android_app: winit::platform::android::activity::
         })
         .unwrap_or_else(|_| PathBuf::from("/data/data/dev.mlm.retorrent"));
     config::ANDROID_DATA_DIR.set(android_data_dir.clone()).ok();
+
+    // Read the launch intent saved by RetorrentActivity.onCreate to a file.
+    let pending_intent_path = android_data_dir.join("pending_intent");
+    if pending_intent_path.exists() {
+        match std::fs::read(&pending_intent_path) {
+            Ok(bytes) => {
+                repose_platform::push_deeplink(bytes);
+                let _ = std::fs::remove_file(&pending_intent_path);
+                tracing::info!("init_deeplink: pushed launch intent from file");
+            }
+            Err(e) => tracing::error!("init_deeplink: failed to read file: {e}"),
+        }
+    }
 
     let download_dir = {
         let dir = jni_min_helper::jni_with_env(|env| -> Result<PathBuf, jni::errors::Error> {
