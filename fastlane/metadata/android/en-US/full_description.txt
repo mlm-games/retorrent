@@ -1,0 +1,11 @@
+A blazingly mediocre, lightweight BitTorrent client built with Rust and an UI that is in early testing (repose). Clean, fast, and easy to use.
+
+Features:
+
+- Magnet link and .torrent file handling
+- UPnP / NAT-PMP port mapping
+- Download and upload speed limits
+- Piece-level progress visualization
+- Torrent queue management
+- Cross-platform: Linux, Windows, macOS, Android
+- Lightweight and resource-efficient

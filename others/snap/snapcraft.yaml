@@ -1,0 +1,59 @@
+name: retorrent
+base: core24
+version: '0.0.0' # Will be auto-updated
+summary: A moderately modern BitTorrent client built in Rust
+description: |
+  A lightweight, modern? BitTorrent client with a GPU-accelerated UI.
+  Supports downloading, seeding, magnet links, and .torrent files.
+
+grade: stable
+confinement: strict
+
+title: Retorrent
+license: GPL-3.0
+contact: https://github.com/mlm-games/retorrent/issues
+website: https://github.com/mlm-games/retorrent
+source-code: https://github.com/mlm-games/retorrent
+issues: https://github.com/mlm-games/retorrent/issues
+donation: https://github.com/sponsors/mlm-games
+
+platforms:
+  amd64:
+  arm64:
+
+apps:
+  retorrent:
+    command: retorrent
+    extensions: [gnome]
+    plugs:
+      - home
+      - network
+      - removable-media
+      - unity7
+      - desktop
+      - desktop-legacy
+      - wayland
+      - x11
+
+parts:
+  retorrent:
+    plugin: dump
+    source: ./builds/
+    source-type: local
+    stage-packages:
+      - libgtk-3-0
+      - libappindicator3-1
+      - libpulse0
+      - libglu1-mesa
+      - libxcursor1
+      - libxinerama1
+      - libxrandr2
+      - libxi6
+      - libudev1
+    override-build: |
+      craftctl default
+      chmod +x $CRAFT_PART_INSTALL/retorrent
+
+layout:
+  /usr/share/retorrent:
+    bind: $SNAP/usr/share/retorrent

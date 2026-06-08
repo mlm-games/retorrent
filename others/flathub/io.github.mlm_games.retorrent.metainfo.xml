@@ -1,0 +1,71 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>io.github.mlm_games.retorrent</id>
+  <name>Retorrent</name>
+  <summary>A BitTorrent client built in Rust</summary>
+  <developer id="io.github.mlm_games">
+    <name>MLM Games</name>
+  </developer>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>GPL-3.0-or-later</project_license>
+  <description>
+    <p>
+      A lightweight BitTorrent client built with Rust.
+      Supports downloading, seeding, magnet links, and .torrent files with a clean early-testing UI interface.
+    </p>
+    <p>Features:</p>
+    <ul>
+      <li>Fast BitTorrent downloads with modern protocol support</li>
+      <li>Magnet link and .torrent file handling</li>
+      <li>UPnP port mapping</li>
+      <li>Download/upload speed management</li>
+      <li>Piece-level progress visualization</li>
+      <li>Cross-platform: Linux, Windows, macOS, Android</li>
+    </ul>
+  </description>
+  <launchable type="desktop-id">io.github.mlm_games.retorrent.desktop</launchable>
+  <url type="homepage">https://github.com/mlm-games/retorrent</url>
+  <url type="bugtracker">https://github.com/mlm-games/retorrent/issues</url>
+  <url type="vcs-browser">https://github.com/mlm-games/retorrent</url>
+  <url type="donation">https://github.com/sponsors/mlm-games</url>
+  <branding>
+    <color type="primary" scheme_preference="light">#131722</color>
+    <color type="primary" scheme_preference="dark">#131722</color>
+  </branding>
+  <screenshots>
+    <screenshot type="default">
+      <caption>Main interface</caption>
+      <image>https://raw.githubusercontent.com/mlm-games/retorrent/master/fastlane/metadata/android/en-US/images/tvScreenshots/1.png</image>
+    </screenshot>
+  </screenshots>
+  <releases>
+    <release version="0.1.0" date="2026-06-08" type="stable">
+      <description>
+        <ul>
+          <li>Initial release</li>
+        </ul>
+      </description>
+    </release>
+  </releases>
+  <content_rating type="oars-1.1"/>
+  <requires>
+    <display_length compare="ge">480</display_length>
+  </requires>
+  <recommends>
+    <control>keyboard</control>
+    <control>pointing</control>
+  </recommends>
+  <supports>
+    <control>touch</control>
+  </supports>
+  <provides>
+    <binary>retorrent</binary>
+    <mediatype>application/x-bittorrent</mediatype>
+  </provides>
+  <keywords>
+    <keyword>torrent</keyword>
+    <keyword>bittorrent</keyword>
+    <keyword>download</keyword>
+    <keyword>p2p</keyword>
+  </keywords>
+</component>

@@ -1,1 +1,9 @@
 /target
+
+# test files
+/dist
+/others/snap/builds
+/artifacts
+/aur-package
+/downloads
+/choco-package
