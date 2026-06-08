@@ -65,7 +65,10 @@ categories = ["android.intent.category.LAUNCHER"]
 # .torrent files (content:// and file://)
 [[package.metadata.android.application.activity.intent_filter]]
 actions = ["android.intent.action.VIEW"]
-categories = ["android.intent.category.DEFAULT", "android.intent.category.BROWSABLE"]
+categories = [
+    "android.intent.category.DEFAULT",
+    "android.intent.category.BROWSABLE",
+]
 
 [[package.metadata.android.application.activity.intent_filter.data]]
 scheme = "content"
@@ -78,7 +81,10 @@ mime_type = "application/x-bittorrent"
 # Magnet links
 [[package.metadata.android.application.activity.intent_filter]]
 actions = ["android.intent.action.VIEW"]
-categories = ["android.intent.category.DEFAULT", "android.intent.category.BROWSABLE"]
+categories = [
+    "android.intent.category.DEFAULT",
+    "android.intent.category.BROWSABLE",
+]
 
 [[package.metadata.android.application.activity.intent_filter.data]]
 scheme = "magnet"
@@ -102,7 +108,7 @@ repose-ui = { version = "0.17.4" }
 repose-material = { version = "0.17.4" }
 repose-text = { version = "0.17.4" }
 repose-devtools = { version = "0.17.4" }
-repose-platform = { version= "0.17.4" }
+repose-platform = { version = "0.17.4" }
 
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
@@ -149,19 +155,19 @@ tray-icon = "0.24"
 
 
 [patch.crates-io]
-winit = { path = "../winit" }
-repose-core = { path = "../repose/crates/repose-core" }
-repose-ui = { path = "../repose/crates/repose-ui" }
-repose-material = { path = "../repose/crates/repose-material" }
-repose-text = { path = "../repose/crates/repose-text" }
-repose-devtools = { path = "../repose/crates/repose-devtools" }
-repose-platform = { path = "../repose/crates/repose-platform" }
-repose-macros = { path = "../repose/crates/repose-macros" }
-repose-tree = { path = "../repose/crates/repose-tree" }
-repose-render-wgpu = { path = "../repose/crates/repose-render-wgpu" }
-repose-navigation = { path = "../repose/crates/repose-navigation" }
-repose-canvas = { path = "../repose/crates/repose-canvas" }
-repose-docking = { path = "../repose/crates/repose-docking" }
+winit = { git = "https://github.com/mlm-games/winit", branch = "0.30.x-cpick" }
+repose-core = { git = "https://github.com/mlm-games/repose", package = "repose-core" }
+repose-ui = { git = "https://github.com/mlm-games/repose", package = "repose-ui" }
+repose-material = { git = "https://github.com/mlm-games/repose", package = "repose-material" }
+repose-text = { git = "https://github.com/mlm-games/repose", package = "repose-text" }
+repose-devtools = { git = "https://github.com/mlm-games/repose", package = "repose-devtools" }
+repose-platform = { git = "https://github.com/mlm-games/repose", package = "repose-platform" }
+repose-macros = { git = "https://github.com/mlm-games/repose", package = "repose-macros" }
+repose-tree = { git = "https://github.com/mlm-games/repose", package = "repose-tree" }
+repose-render-wgpu = { git = "https://github.com/mlm-games/repose", package = "repose-render-wgpu" }
+repose-navigation = { git = "https://github.com/mlm-games/repose", package = "repose-navigation" }
+repose-canvas = { git = "https://github.com/mlm-games/repose", package = "repose-canvas" }
+repose-docking = { git = "https://github.com/mlm-games/repose", package = "repose-docking" }
 
 [target.'cfg(target_os = "android")'.dependencies]
 android_logger = "0.15"
@@ -176,7 +182,15 @@ wasm-bindgen = "0.2"
 console_error_panic_hook = "0.1"
 console_log = "1.0"
 getrandom = { version = "0.4", features = ["wasm_js"] }
-getrandom_03 = { package = "getrandom", version = "0.3", features = ["wasm_js"] }
+getrandom_03 = { package = "getrandom", version = "0.3", features = [
+    "wasm_js",
+] }
 log = "0.4"
-tokio = { version = "1", features = ["rt", "sync", "time", "macros", "io-util"] }
+tokio = { version = "1", features = [
+    "rt",
+    "sync",
+    "time",
+    "macros",
+    "io-util",
+] }
 winit = { version = "0.30", features = ["rwh_05"] }

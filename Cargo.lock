@@ -1125,6 +1125,7 @@ checksum = "75b325c5dbd37f80359721ad39aca5a29fb04c89279657cffdda8736d0c0b9d2"
 [[package]]
 name = "dpi"
 version = "0.1.1"
+source = "git+https://github.com/mlm-games/winit?branch=0.30.x-cpick#eedfc554678e5644505bebd5d6bf5b2d4a690ba6"
 
 [[package]]
 name = "dpi"
@@ -3678,6 +3679,7 @@ checksum = "19b30a45b0cd0bcca8037f3d0dc3421eaf95327a17cad11964fb8179b4fc4832"
 [[package]]
 name = "repose-core"
 version = "0.17.6"
+source = "git+https://github.com/mlm-games/repose#bc6d30bf712a6951513e34771d0f8706b0702442"
 dependencies = [
  "bitflags 2.13.0",
  "log",
@@ -3693,6 +3695,7 @@ dependencies = [
 [[package]]
 name = "repose-devtools"
 version = "0.17.6"
+source = "git+https://github.com/mlm-games/repose#bc6d30bf712a6951513e34771d0f8706b0702442"
 dependencies = [
  "log",
  "repose-core",
@@ -3702,6 +3705,7 @@ dependencies = [
 [[package]]
 name = "repose-macros"
 version = "0.17.6"
+source = "git+https://github.com/mlm-games/repose#bc6d30bf712a6951513e34771d0f8706b0702442"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -3711,6 +3715,7 @@ dependencies = [
 [[package]]
 name = "repose-material"
 version = "0.17.6"
+source = "git+https://github.com/mlm-games/repose#bc6d30bf712a6951513e34771d0f8706b0702442"
 dependencies = [
  "repose-core",
  "repose-text",
@@ -3721,6 +3726,7 @@ dependencies = [
 [[package]]
 name = "repose-navigation"
 version = "0.17.6"
+source = "git+https://github.com/mlm-games/repose#bc6d30bf712a6951513e34771d0f8706b0702442"
 dependencies = [
  "log",
  "repose-core",
@@ -3732,6 +3738,7 @@ dependencies = [
 [[package]]
 name = "repose-platform"
 version = "0.17.6"
+source = "git+https://github.com/mlm-games/repose#bc6d30bf712a6951513e34771d0f8706b0702442"
 dependencies = [
  "accesskit",
  "accesskit_winit",
@@ -3759,6 +3766,7 @@ dependencies = [
 [[package]]
 name = "repose-render-wgpu"
 version = "0.17.6"
+source = "git+https://github.com/mlm-games/repose#bc6d30bf712a6951513e34771d0f8706b0702442"
 dependencies = [
  "ab_glyph",
  "anyhow",
@@ -3777,6 +3785,7 @@ dependencies = [
 [[package]]
 name = "repose-text"
 version = "0.17.6"
+source = "git+https://github.com/mlm-games/repose#bc6d30bf712a6951513e34771d0f8706b0702442"
 dependencies = [
  "cosmic-text",
  "fontdb",
@@ -3788,6 +3797,7 @@ dependencies = [
 [[package]]
 name = "repose-tree"
 version = "0.17.6"
+source = "git+https://github.com/mlm-games/repose#bc6d30bf712a6951513e34771d0f8706b0702442"
 dependencies = [
  "log",
  "rapidhash",
@@ -3800,6 +3810,7 @@ dependencies = [
 [[package]]
 name = "repose-ui"
 version = "0.17.6"
+source = "git+https://github.com/mlm-games/repose#bc6d30bf712a6951513e34771d0f8706b0702442"
 dependencies = [
  "ab_glyph",
  "fontdb",
@@ -5887,6 +5898,7 @@ checksum = "d6bbff5f0aada427a1e5a6da5f1f98158182f26556f345ac9e04d36d0ebed650"
 [[package]]
 name = "winit"
 version = "0.30.13"
+source = "git+https://github.com/mlm-games/winit?branch=0.30.x-cpick#eedfc554678e5644505bebd5d6bf5b2d4a690ba6"
 dependencies = [
  "ahash",
  "android-activity",
@@ -6439,7 +6451,9 @@ dependencies = [
 [[patch.unused]]
 name = "repose-canvas"
 version = "0.17.6"
+source = "git+https://github.com/mlm-games/repose#bc6d30bf712a6951513e34771d0f8706b0702442"
 
 [[patch.unused]]
 name = "repose-docking"
 version = "0.17.6"
+source = "git+https://github.com/mlm-games/repose#bc6d30bf712a6951513e34771d0f8706b0702442"
