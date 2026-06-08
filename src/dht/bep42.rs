@@ -1,4 +1,4 @@
-//! BEP-42: DHT Security Extension
+//! BEP-42: DHT Security Extension (Almost mimics rqbit for dht (not using it directly for control))
 //!
 //! Ties node IDs to their external IP address to defend against Sybil attacks
 //! that would otherwise let one entity control many nodes close to a target
@@ -16,8 +16,8 @@
 //! CRC is computed as `crc32c(masked_ip_be | (r << shift))` over the
 //! big-endian encoding of the masked 32-bit (IPv4) or 64-bit (IPv6 high half) value.
 
-use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 use rand::RngExt;
+use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 
 const IPV4_MASK: u32 = 0x030f_3fff;
 const IPV6_MASK: u64 = 0x0103_070f_1f3f_7fff;
@@ -49,16 +49,17 @@ pub fn validate_node_id(node_id: &[u8; 20], ip: IpAddr) -> bool {
     }
     let r = node_id[19] & 0x07;
     let expected_crc = compute_crc(ip, r);
-    let actual = ((node_id[0] as u32) << 24)
-        | ((node_id[1] as u32) << 16)
-        | ((node_id[2] as u32) << 8);
+    let actual =
+        ((node_id[0] as u32) << 24) | ((node_id[1] as u32) << 16) | ((node_id[2] as u32) << 8);
     let expected = expected_crc & 0xffff_f800;
     actual & 0xffff_f800 == expected
 }
 
 pub fn is_local(ip: IpAddr) -> bool {
     match ip {
-        IpAddr::V4(v4) => v4.is_loopback() || v4.is_private() || v4.is_link_local() || v4.is_unspecified(),
+        IpAddr::V4(v4) => {
+            v4.is_loopback() || v4.is_private() || v4.is_link_local() || v4.is_unspecified()
+        }
         IpAddr::V6(v6) => v6.is_loopback() || v6.is_unspecified() || is_unique_local_v6(&v6),
     }
 }
