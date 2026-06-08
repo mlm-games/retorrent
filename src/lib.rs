@@ -23,6 +23,8 @@ mod ui;
 
 #[cfg(any(target_os = "linux", target_os = "windows", target_os = "macos"))]
 mod tray;
+#[cfg(any(target_os = "linux", target_os = "windows", target_os = "macos"))]
+use tray::TrayCommand;
 
 #[cfg(target_os = "android")]
 mod android_service;
@@ -188,8 +190,34 @@ pub fn run_desktop_main() -> Result<()> {
     let tray = Arc::new(tray::AppTray::new(tray_cmd_tx));
     let tray_cmd_rx = Arc::new(Mutex::new(tray_cmd_rx));
 
-    if std::env::var("WAYLAND_DISPLAY").is_err() {
-        repose_platform::set_close_to_tray(true);
+    repose_platform::set_close_to_tray(true);
+
+    // hide/show toggles work even when the window is hidden
+    {
+        let rx = tray_cmd_rx.clone();
+        let eng = engine.clone();
+        repose_platform::set_about_to_wait_callback(Box::new(move || {
+            if let Ok(guard) = rx.lock() {
+                while let Ok(cmd) = guard.try_recv() {
+                    match cmd {
+                        TrayCommand::ToggleWindow => {
+                            let vis = repose_platform::window_is_visible();
+                            tracing::info!("TrayCommand::ToggleWindow: window_is_visible={vis}");
+                            if vis {
+                                repose_platform::hide_app_window();
+                            } else {
+                                repose_platform::show_app_window();
+                            }
+                        }
+                        TrayCommand::Quit => {
+                            tracing::info!("TrayCommand::Quit: saving and exiting");
+                            eng.save_all_resume();
+                            std::process::exit(0);
+                        }
+                    }
+                }
+            }
+        }));
     }
 
     repose_platform::run_desktop_app(move |sched, _rc| {
@@ -198,7 +226,6 @@ pub fn run_desktop_main() -> Result<()> {
             engine.clone(),
             rt.clone(),
             tray.clone(),
-            tray_cmd_rx.clone(),
             pending.clone(),
         )
     })?;
@@ -232,28 +259,137 @@ pub extern "C" fn android_main(android_app: winit::platform::android::activity::
         );
     }
 
-    let android_data_dir = jni_min_helper::jni_with_env(|env| -> Result<PathBuf, jni::errors::Error> {
+    // Read the intent that started the Activity (e.g., opening a .torrent file)
+    match jni_min_helper::jni_with_env(|env| -> Result<(), jni::errors::Error> {
         let ctx = jni_min_helper::android_context();
-        let file_obj = env
+        let intent = env
             .call_method(
                 ctx,
-                jni_str!("getFilesDir"),
-                jni_sig!("()Ljava/io/File;"),
+                jni_str!("getIntent"),
+                jni_sig!("()Landroid/content/Intent;"),
                 &[],
             )?
             .l()?;
-        let jpath = env
+        if intent.is_null() {
+            return Ok(());
+        }
+        let action_obj = env
             .call_method(
-                &file_obj,
-                jni_str!("getAbsolutePath"),
+                &intent,
+                jni_str!("getAction"),
                 jni_sig!("()Ljava/lang/String;"),
                 &[],
             )?
             .l()?;
-        let s: String = JString::cast_local(env, jpath)?.try_to_string(env)?;
-        Ok(PathBuf::from(s))
-    })
-    .unwrap_or_else(|_| PathBuf::from("/data/data/dev.mlm.retorrent"));
+        let is_view = if !action_obj.is_null() {
+            let s: String = JString::cast_local(env, action_obj)?.try_to_string(env)?;
+            s == "android.intent.action.VIEW"
+        } else {
+            false
+        };
+        if !is_view {
+            tracing::info!("Intent action is not VIEW, skipping torrent data read");
+            return Ok(());
+        }
+        let uri = env
+            .call_method(
+                &intent,
+                jni_str!("getData"),
+                jni_sig!("()Landroid/net/Uri;"),
+                &[],
+            )?
+            .l()?;
+        if uri.is_null() {
+            tracing::info!("VIEW intent has no data URI");
+            return Ok(());
+        }
+        tracing::info!("Processing VIEW intent with data URI");
+        let cr = env
+            .call_method(
+                ctx,
+                jni_str!("getContentResolver"),
+                jni_sig!("()Landroid/content/ContentResolver;"),
+                &[],
+            )?
+            .l()?;
+        let is_obj = env
+            .call_method(
+                &cr,
+                jni_str!("openInputStream"),
+                jni_sig!("(Landroid/net/Uri;)Ljava/io/InputStream;"),
+                &[JValue::from(&uri)],
+            )?
+            .l()?;
+        if is_obj.is_null() {
+            tracing::info!("openInputStream returned null");
+            return Ok(());
+        }
+        let buf = env.new_byte_array(4096)?;
+        let baos = env.new_object(
+            jni_str!("java/io/ByteArrayOutputStream"),
+            jni_sig!("()V"),
+            &[],
+        )?;
+        let mut total = 0;
+        loop {
+            let n = env
+                .call_method(
+                    &is_obj,
+                    jni_str!("read"),
+                    jni_sig!("([B)I"),
+                    &[JValue::from(&buf)],
+                )?
+                .i()?;
+            if n < 0 {
+                break;
+            }
+            total += n as i32;
+            env.call_method(
+                &baos,
+                jni_str!("write"),
+                jni_sig!("([BII)V"),
+                &[JValue::from(&buf), JValue::Int(0), JValue::Int(n)],
+            )?;
+        }
+        env.call_method(&is_obj, jni_str!("close"), jni_sig!("()V"), &[])?;
+        tracing::info!("Read {} bytes from intent URI", total);
+        let result = env
+            .call_method(&baos, jni_str!("toByteArray"), jni_sig!("()[B"), &[])?
+            .l()?;
+        let result_raw = *result;
+        let arr = unsafe { jni::objects::JByteArray::from_raw(env, result_raw) };
+        let bytes = env.convert_byte_array(&arr)?;
+        tracing::info!("Converted {} bytes, queueing torrent", bytes.len());
+        android_service::queue_torrent_bytes(bytes);
+        Ok(())
+    }) {
+        Ok(_) => tracing::info!("Intent handling completed"),
+        Err(e) => tracing::error!("Intent handling failed: {e}"),
+    };
+
+    let android_data_dir =
+        jni_min_helper::jni_with_env(|env| -> Result<PathBuf, jni::errors::Error> {
+            let ctx = jni_min_helper::android_context();
+            let file_obj = env
+                .call_method(
+                    ctx,
+                    jni_str!("getFilesDir"),
+                    jni_sig!("()Ljava/io/File;"),
+                    &[],
+                )?
+                .l()?;
+            let jpath = env
+                .call_method(
+                    &file_obj,
+                    jni_str!("getAbsolutePath"),
+                    jni_sig!("()Ljava/lang/String;"),
+                    &[],
+                )?
+                .l()?;
+            let s: String = JString::cast_local(env, jpath)?.try_to_string(env)?;
+            Ok(PathBuf::from(s))
+        })
+        .unwrap_or_else(|_| PathBuf::from("/data/data/dev.mlm.retorrent"));
     config::ANDROID_DATA_DIR.set(android_data_dir).ok();
 
     let download_dir = {
@@ -294,6 +430,7 @@ pub extern "C" fn android_main(android_app: winit::platform::android::activity::
     );
     let mut config = Config::load_or_default();
     config.download_dir = download_dir;
+    let download_dir = config.download_dir.clone();
     let engine = rt.block_on(async { Arc::new(TorrentEngine::new(config).await) });
     android_service::ENGINE.set(engine.clone()).ok();
     android_service::RUNTIME.set(rt.clone()).ok();
@@ -319,6 +456,13 @@ pub extern "C" fn android_main(android_app: winit::platform::android::activity::
 
     let engine_for_shutdown = engine.clone();
     let pending: Arc<Mutex<Vec<PendingTorrent>>> = Arc::new(Mutex::new(Vec::new()));
+    {
+        let mut pending_guard = pending.lock().unwrap();
+        for mut p in android_service::drain_pending_intents() {
+            p.suggested_dir = download_dir.clone();
+            pending_guard.push(p);
+        }
+    }
 
     use repose_platform::android::run_android_app;
 

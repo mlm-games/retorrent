@@ -1,6 +1,5 @@
 use std::path::PathBuf;
 use std::rc::Rc;
-use std::sync::mpsc;
 use std::sync::{Arc, Mutex};
 
 #[cfg(target_os = "android")]
@@ -23,7 +22,7 @@ use crate::engine::TorrentEngine;
 use crate::metainfo::{FileInfo, MetaInfo};
 use crate::network::TorrentStats;
 #[cfg(any(target_os = "linux", target_os = "windows", target_os = "macos"))]
-use crate::tray::{AppTray, TrayCommand};
+use crate::tray::AppTray;
 use crate::types::*;
 use crate::ui::components;
 use crate::ui::icons::{Symbols, icon};
@@ -113,12 +112,10 @@ pub fn app(
     engine: Arc<TorrentEngine>,
     rt: Arc<tokio::runtime::Runtime>,
     #[cfg(any(target_os = "linux", target_os = "windows", target_os = "macos"))] tray: Arc<AppTray>,
-    #[cfg(any(target_os = "linux", target_os = "windows", target_os = "macos"))] tray_cmd_rx: Arc<Mutex<mpsc::Receiver<TrayCommand>>>,
     pending_torrents: Arc<Mutex<Vec<PendingTorrent>>>,
 ) -> View {
     set_theme_default(theme::dark_theme());
 
-    let should_quit: Rc<Signal<bool>> = remember(|| signal(false));
     let selected: Rc<Signal<Option<InfoHash>>> = remember(|| signal(None));
     let active_tab: Rc<Signal<Tab>> = remember(|| signal(Tab::General));
     let filter_state: Rc<Signal<FilterState>> = remember(|| signal(FilterState::All));
@@ -177,20 +174,12 @@ pub fn app(
         }
     }
 
-    #[cfg(any(target_os = "linux", target_os = "windows", target_os = "macos"))]
-    if let Ok(guard) = tray_cmd_rx.lock() {
-        while let Ok(cmd) = guard.try_recv() {
-            match cmd {
-                TrayCommand::ToggleWindow => {
-                    if repose_platform::window_is_visible() {
-                        repose_platform::hide_app_window();
-                    } else {
-                        repose_platform::show_app_window();
-                    }
-                }
-                TrayCommand::Quit => {
-                    should_quit.set(true);
-                }
+    #[cfg(target_os = "android")]
+    {
+        let intent_pending = android_service::drain_pending_intents();
+        if !intent_pending.is_empty() {
+            if let Ok(mut p) = pending_from_button.lock() {
+                p.extend(intent_pending);
             }
         }
     }
@@ -319,11 +308,6 @@ pub fn app(
             active,
             rows.len()
         ));
-    }
-
-    if should_quit.get() {
-        engine.save_all_resume();
-        std::process::exit(0);
     }
 
     let all_torrents = torrents.get();

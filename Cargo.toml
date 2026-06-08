@@ -129,17 +129,26 @@ tray-icon = "0.24"
 repose-platform = { version = "0.17.4", features = [
     "desktop",
 ] }
-# repose-platform = { path = "../repose/crates/repose-platform", features = [
-#     "desktop",
-# ] }
+
+[patch.crates-io]
+winit = { path = "../winit" }
+repose-core = { path = "../repose/crates/repose-core" }
+repose-ui = { path = "../repose/crates/repose-ui" }
+repose-material = { path = "../repose/crates/repose-material" }
+repose-text = { path = "../repose/crates/repose-text" }
+repose-devtools = { path = "../repose/crates/repose-devtools" }
+repose-platform = { path = "../repose/crates/repose-platform" }
+repose-macros = { path = "../repose/crates/repose-macros" }
+repose-tree = { path = "../repose/crates/repose-tree" }
+repose-render-wgpu = { path = "../repose/crates/repose-render-wgpu" }
+repose-navigation = { path = "../repose/crates/repose-navigation" }
+repose-canvas = { path = "../repose/crates/repose-canvas" }
+repose-docking = { path = "../repose/crates/repose-docking" }
 
 [target.'cfg(target_os = "android")'.dependencies]
 repose-platform = { version = "0.17.4", features = [
     "android",
 ] }
-# repose-platform = { path = "../repose/crates/repose-platform", features = [
-#     "android",
-# ] }
 android_logger = "0.15"
 winit = "0.30"
 log = "0.4"
@@ -157,8 +166,5 @@ log = "0.4"
 repose-platform = { version = "0.17.4", features = [
     "web",
 ] }
-# repose-platform = { path = "../repose/crates/repose-platform", features = [
-#     "web",
-# ] }
 tokio = { version = "1", features = ["rt", "sync", "time", "macros", "io-util"] }
 winit = { version = "0.30", features = ["rwh_05"] }

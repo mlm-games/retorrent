@@ -1124,6 +1124,10 @@ checksum = "75b325c5dbd37f80359721ad39aca5a29fb04c89279657cffdda8736d0c0b9d2"
 
 [[package]]
 name = "dpi"
+version = "0.1.1"
+
+[[package]]
+name = "dpi"
 version = "0.1.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d8b14ccef22fc6f5a8f4d7d768562a182c04ce9a3b3157b91390b52ddfdf1a76"
@@ -2597,7 +2601,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "47a2e3dff89cd322c66647942668faee0a2b1f88ea6cbb4d374b4a8d7e92528c"
 dependencies = [
  "crossbeam-channel",
- "dpi",
+ "dpi 0.1.2",
  "gtk",
  "keyboard-types",
  "libxdo",
@@ -3555,6 +3559,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "973443cf09a9c8656b574a866ab68dfa19f0867d0340648c7d2f6a71b8a8ea68"
 
 [[package]]
+name = "rapidhash"
+version = "4.4.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b5e48930979c155e2f33aa36ab3119b5ee81332beb6482199a8ecd6029b80b59"
+dependencies = [
+ "rustversion",
+]
+
+[[package]]
 name = "raw-window-handle"
 version = "0.5.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3664,9 +3677,7 @@ checksum = "19b30a45b0cd0bcca8037f3d0dc3421eaf95327a17cad11964fb8179b4fc4832"
 
 [[package]]
 name = "repose-core"
-version = "0.17.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1fc9ea93ed4c0910291832f9c6ef53e37ee7cda5e2e618b333a8f7636581a7be"
+version = "0.17.5"
 dependencies = [
  "bitflags 2.13.0",
  "log",
@@ -3681,9 +3692,7 @@ dependencies = [
 
 [[package]]
 name = "repose-devtools"
-version = "0.17.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e59f300b53914f77355bb1b057a24c9acc21ac4bf52a6b2b1002475a1674a64d"
+version = "0.17.5"
 dependencies = [
  "log",
  "repose-core",
@@ -3692,9 +3701,7 @@ dependencies = [
 
 [[package]]
 name = "repose-macros"
-version = "0.17.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "efea9e33f8ad4c1d098927ffd2453b9ab179ccb507c3c74ce587032122cb213c"
+version = "0.17.5"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -3703,9 +3710,7 @@ dependencies = [
 
 [[package]]
 name = "repose-material"
-version = "0.17.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "66388000265c7e3e1b6f1329fc24cf4c0cf0add11a47886437e2855dd9d65e9e"
+version = "0.17.5"
 dependencies = [
  "repose-core",
  "repose-text",
@@ -3715,9 +3720,7 @@ dependencies = [
 
 [[package]]
 name = "repose-navigation"
-version = "0.17.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2436268760539868d127b5e1882b3c60fb017cdb79cafb6340852e015329a579"
+version = "0.17.5"
 dependencies = [
  "log",
  "repose-core",
@@ -3728,9 +3731,7 @@ dependencies = [
 
 [[package]]
 name = "repose-platform"
-version = "0.17.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d15c0c787b7b984154325762fd23a350e7d5a731d47bcd7b4767c5ecedb0ede4"
+version = "0.17.5"
 dependencies = [
  "accesskit",
  "accesskit_winit",
@@ -3757,9 +3758,7 @@ dependencies = [
 
 [[package]]
 name = "repose-render-wgpu"
-version = "0.17.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4527d073d3ff48126bbe9a4e09ac582b22228dc847c88839925b8293434f1a56"
+version = "0.17.5"
 dependencies = [
  "ab_glyph",
  "anyhow",
@@ -3777,25 +3776,21 @@ dependencies = [
 
 [[package]]
 name = "repose-text"
-version = "0.17.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e372636a259334a92a462b9bfef9d531c2c20178dd3704a362e6496650171f65"
+version = "0.17.5"
 dependencies = [
- "ahash",
  "cosmic-text",
  "fontdb",
  "once_cell",
+ "rapidhash",
  "unicode-segmentation",
 ]
 
 [[package]]
 name = "repose-tree"
-version = "0.17.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "380efd1f08b2977602cdd8152db7cd7144299ffcf4f8592850bdf3a346f7ebe7"
+version = "0.17.5"
 dependencies = [
- "ahash",
  "log",
+ "rapidhash",
  "repose-core",
  "rustc-hash 2.1.2",
  "slotmap",
@@ -3804,9 +3799,7 @@ dependencies = [
 
 [[package]]
 name = "repose-ui"
-version = "0.17.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f0e68c0b9d9b148ac6c924107f6c28f28d8e880b918a3486646110b7eecd2ea1"
+version = "0.17.5"
 dependencies = [
  "ab_glyph",
  "fontdb",
@@ -3954,8 +3947,8 @@ dependencies = [
 
 [[package]]
 name = "rlobkit-core"
-version = "0.2.0"
-source = "git+https://github.com/mlm-games/rlobkit#5c997a9aea317021d7eed0723057fb70cbce77cd"
+version = "0.2.3"
+source = "git+https://github.com/mlm-games/rlobkit#cc1eb1384b1fc8a7f395a1e3ed151881b0fa00a7"
 dependencies = [
  "async-trait",
  "bytes",
@@ -3967,8 +3960,8 @@ dependencies = [
 
 [[package]]
 name = "rlobkit-dialogs"
-version = "0.2.0"
-source = "git+https://github.com/mlm-games/rlobkit#5c997a9aea317021d7eed0723057fb70cbce77cd"
+version = "0.2.3"
+source = "git+https://github.com/mlm-games/rlobkit#cc1eb1384b1fc8a7f395a1e3ed151881b0fa00a7"
 dependencies = [
  "async-trait",
  "bytes",
@@ -5894,8 +5887,6 @@ checksum = "d6bbff5f0aada427a1e5a6da5f1f98158182f26556f345ac9e04d36d0ebed650"
 [[package]]
 name = "winit"
 version = "0.30.13"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a6755fa58a9f8350bd1e472d4c3fcc25f824ec358933bba33306d0b63df5978d"
 dependencies = [
  "ahash",
  "android-activity",
@@ -5909,7 +5900,7 @@ dependencies = [
  "core-foundation 0.9.4",
  "core-graphics",
  "cursor-icon",
- "dpi",
+ "dpi 0.1.1",
  "js-sys",
  "libc",
  "memmap2",
@@ -6444,3 +6435,11 @@ dependencies = [
  "syn 2.0.117",
  "winnow 1.0.3",
 ]
+
+[[patch.unused]]
+name = "repose-canvas"
+version = "0.17.5"
+
+[[patch.unused]]
+name = "repose-docking"
+version = "0.17.5"
