@@ -544,7 +544,7 @@ fn top_bar_view(
                                     Ok(data) => match MetaInfo::from_bytes(&data) {
                                         Ok(meta) => {
                                             let suggested_dir =
-                                                engine.config.read().expect("engine config poisoned").download_dir.clone();
+                                                engine.config_read().download_dir.clone();
                                             if let Ok(mut p) = pending_from_button.lock() {
                                                 p.push(PendingTorrent {
                                                     name: meta.name,
@@ -591,11 +591,10 @@ fn top_bar_view(
                                                                 total_size: meta.total_size,
                                                                 files: meta.files,
                                                                 data,
-                                                                 suggested_dir: engine
-                                                                     .config
-                                                                     .read().expect("engine config poisoned")
-                                                                     .download_dir
-                                                                     .clone(),
+                                                                  suggested_dir: engine
+                                                                      .config_read()
+                                                                      .download_dir
+                                                                      .clone(),
                                                             });
                                                         }
                                                     }
@@ -1441,11 +1440,7 @@ fn status_bar_view(
     engine: &TorrentEngine,
 ) -> View {
     let th = theme();
-    let port = engine
-        .config
-        .read()
-        .expect("engine config poisoned")
-        .listen_port;
+    let port = engine.config_read().listen_port;
 
     Row(Modifier::new()
         .fill_max_width()
@@ -1722,13 +1717,7 @@ fn settings_dialog_view(
 ) -> View {
     let th = theme();
     let config: Rc<Signal<Config>> = remember_with_key(state.key("cfg"), || {
-        signal(
-            engine
-                .config
-                .read()
-                .expect("engine config poisoned")
-                .clone(),
-        )
+        signal(engine.config_read().clone())
     });
     let last_visible = remember_with_key(state.key("lv"), || signal(false));
 
@@ -1757,11 +1746,7 @@ fn settings_dialog_view(
 
     let vis = state.is_visible();
     if vis && !last_visible.get() {
-        let engine_cfg = engine
-            .config
-            .read()
-            .expect("engine config poisoned")
-            .clone();
+        let engine_cfg = engine.config_read().clone();
         config.set(engine_cfg.clone());
         listen_port_input.set(engine_cfg.listen_port.to_string());
         max_conn_input.set(engine_cfg.max_connections.to_string());
@@ -1999,7 +1984,7 @@ fn settings_dialog_view(
                         let sr = seed_ratio_input.clone();
                         move || {
                             let engine_cfg =
-                                e.config.read().expect("engine config poisoned").clone();
+                                e.config_read().clone();
                             c.set(engine_cfg.clone());
                             lp.set(engine_cfg.listen_port.to_string());
                             mc.set(engine_cfg.max_connections.to_string());

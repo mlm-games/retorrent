@@ -156,7 +156,7 @@ pub fn run_desktop_main() -> Result<()> {
 
     let engine_for_shutdown = engine.clone();
     let pending: Arc<Mutex<Vec<PendingTorrent>>> = Arc::new(Mutex::new(Vec::new()));
-    let suggested_dir = dirs::download_dir().unwrap_or_else(|| engine.config.read().unwrap().download_dir.clone());
+    let suggested_dir = dirs::download_dir().unwrap_or_else(|| engine.config_read().download_dir.clone());
     for path in &torrent_files {
         match std::fs::read(path) {
             Ok(data) => match MetaInfo::from_bytes(&data) {
