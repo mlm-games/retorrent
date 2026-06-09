@@ -16,8 +16,8 @@
 //! Privacy: BEP-19 explicitly forbids webseeds for private torrents. We
 //! refuse to use `url-list` when the torrent's `private` flag is set.
 
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
 
 use parking_lot::Mutex;
@@ -108,7 +108,9 @@ impl WebseedSource {
                 next.store(idx + 1, std::sync::atomic::Ordering::Relaxed);
                 break;
             }
-            let Some(idx) = chosen else { break; };
+            let Some(idx) = chosen else {
+                break;
+            };
 
             let permit = match sem.clone().acquire_owned().await {
                 Ok(p) => p,
@@ -176,7 +178,10 @@ impl WebseedSource {
                 );
                 let resp = match http
                     .get(&url)
-                    .header("Range", format!("bytes={}-{}", file_offset, file_offset + len - 1))
+                    .header(
+                        "Range",
+                        format!("bytes={}-{}", file_offset, file_offset + len - 1),
+                    )
                     .send()
                     .await
                 {
@@ -191,11 +196,7 @@ impl WebseedSource {
                     Err(e) => return Err(format!("read: {}", e)),
                 };
                 if bytes.len() as u64 != len {
-                    return Err(format!(
-                        "short read: got {} expected {}",
-                        bytes.len(),
-                        len
-                    ));
+                    return Err(format!("short read: got {} expected {}", bytes.len(), len));
                 }
                 Ok::<_, String>(bytes.to_vec())
             }
@@ -263,7 +264,11 @@ impl WebseedSource {
                 .first()
                 .ok_or_else(|| "no webseed url available".to_string())?;
             let url = self.meta.webseed_url_for(url, &file_info.path);
-            out.push(FileChunk { url, file_offset: skip, len: take });
+            out.push(FileChunk {
+                url,
+                file_offset: skip,
+                len: take,
+            });
             abs += take;
             remaining -= take;
         }
@@ -354,7 +359,10 @@ mod tests {
         // file_path in MetaInfo already includes the info.name prefix,
         // so the URL is just base + file_path.
         assert_eq!(
-            m.webseed_url_for("https://archive.org/download/", "BigBuckBunny_124/movie.mp4"),
+            m.webseed_url_for(
+                "https://archive.org/download/",
+                "BigBuckBunny_124/movie.mp4"
+            ),
             "https://archive.org/download/BigBuckBunny_124/movie.mp4"
         );
     }
@@ -379,10 +387,16 @@ mod tests {
             piece_manager: Arc::new(pm),
             storage: panic_storage_placeholder(),
             stats: Arc::new(parking_lot::Mutex::new(TorrentStats {
-                download_rate: 0, upload_rate: 0, downloaded: 0, uploaded: 0,
-                connected_peers: 0, seeders: 0, leechers: 0,
+                download_rate: 0,
+                upload_rate: 0,
+                downloaded: 0,
+                uploaded: 0,
+                connected_peers: 0,
+                seeders: 0,
+                leechers: 0,
                 state: crate::types::TorrentState::Downloading,
-                progress: 0.0, eta_seconds: None,
+                progress: 0.0,
+                eta_seconds: None,
             })),
             total_downloaded: Arc::new(AtomicU64::new(0)),
             cancel: CancellationToken::new(),
@@ -423,4 +437,3 @@ mod tests {
         let _ = FilePriority::Normal;
     }
 }
-

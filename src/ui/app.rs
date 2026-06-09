@@ -228,7 +228,11 @@ pub fn app(
                             }
                         }
                     }
-                    if total > 0 { done as f32 / total as f32 } else { 0.0 }
+                    if total > 0 {
+                        done as f32 / total as f32
+                    } else {
+                        0.0
+                    }
                 };
 
                 rows.push(TorrentRow {
@@ -539,8 +543,7 @@ fn top_bar_view(
                                 match std::fs::read(&path) {
                                     Ok(data) => match MetaInfo::from_bytes(&data) {
                                         Ok(meta) => {
-                                            let suggested_dir =
-                                                engine.config.download_dir.clone();
+                                            let suggested_dir = engine.config.download_dir.clone();
                                             if let Ok(mut p) = pending_from_button.lock() {
                                                 p.push(PendingTorrent {
                                                     name: meta.name,
@@ -561,8 +564,8 @@ fn top_bar_view(
                         }
                         #[cfg(target_os = "android")]
                         rt.block_on(async {
-                            use rlobkit_dialogs::picker::{OpenFileOptions, RlobKit};
                             use rlobkit_dialogs::RlobKitMode;
+                            use rlobkit_dialogs::picker::{OpenFileOptions, RlobKit};
                             match RlobKit::open_file_picker(OpenFileOptions {
                                 title: Some("Select Torrent File".into()),
                                 mode: RlobKitMode::Single,
@@ -575,34 +578,30 @@ fn top_bar_view(
                                         let temp_dir = std::env::temp_dir();
                                         let temp_path =
                                             temp_dir.join(format!("torrent_{}", file.name()));
-                                        if RlobKit::read_file_to_path(&file, &temp_path)
-                                            .is_ok()
-                                        {
+                                        if RlobKit::read_file_to_path(&file, &temp_path).is_ok() {
                                             match std::fs::read(&temp_path) {
-                                                Ok(data) => {
-                                                    match MetaInfo::from_bytes(&data) {
-                                                        Ok(meta) => {
-                                                            if let Ok(mut p) =
-                                                                pending_from_button.lock()
-                                                            {
-                                                                p.push(PendingTorrent {
-                                                                    name: meta.name,
-                                                                    total_size: meta.total_size,
-                                                                    files: meta.files,
-                                                                    data,
-                                                                    suggested_dir: engine
-                                                                        .config
-                                                                        .download_dir
-                                                                        .clone(),
-                                                                });
-                                                            }
+                                                Ok(data) => match MetaInfo::from_bytes(&data) {
+                                                    Ok(meta) => {
+                                                        if let Ok(mut p) =
+                                                            pending_from_button.lock()
+                                                        {
+                                                            p.push(PendingTorrent {
+                                                                name: meta.name,
+                                                                total_size: meta.total_size,
+                                                                files: meta.files,
+                                                                data,
+                                                                suggested_dir: engine
+                                                                    .config
+                                                                    .download_dir
+                                                                    .clone(),
+                                                            });
                                                         }
-                                                        Err(e) => tracing::error!(
-                                                            "Failed to parse torrent: {}",
-                                                            e
-                                                        ),
                                                     }
-                                                }
+                                                    Err(e) => tracing::error!(
+                                                        "Failed to parse torrent: {}",
+                                                        e
+                                                    ),
+                                                },
                                                 Err(e) => tracing::error!(
                                                     "Failed to read temp file: {}",
                                                     e
@@ -1595,30 +1594,36 @@ fn url_dialog_view(
                             if !url.is_empty() {
                                 let engine = engine.clone();
                                 let pfb = pending_from_button.clone();
-                                std::thread::spawn(move || {
-                                    match reqwest::blocking::get(&url) {
-                                        Ok(resp) => match resp.bytes() {
-                                            Ok(bytes) => {
-                                                let data = bytes.to_vec();
-                                                match MetaInfo::from_bytes(&data) {
-                                                    Ok(meta) => {
-                                                        if let Ok(mut p) = pfb.lock() {
-                                                            p.push(PendingTorrent {
-                                                                name: meta.name,
-                                                                total_size: meta.total_size,
-                                                                files: meta.files,
-                                                                data,
-                                                                suggested_dir: engine.config.download_dir.clone(),
-                                                            });
-                                                        }
+                                std::thread::spawn(move || match reqwest::blocking::get(&url) {
+                                    Ok(resp) => match resp.bytes() {
+                                        Ok(bytes) => {
+                                            let data = bytes.to_vec();
+                                            match MetaInfo::from_bytes(&data) {
+                                                Ok(meta) => {
+                                                    if let Ok(mut p) = pfb.lock() {
+                                                        p.push(PendingTorrent {
+                                                            name: meta.name,
+                                                            total_size: meta.total_size,
+                                                            files: meta.files,
+                                                            data,
+                                                            suggested_dir: engine
+                                                                .config
+                                                                .download_dir
+                                                                .clone(),
+                                                        });
                                                     }
-                                                    Err(e) => tracing::error!("Failed to parse torrent from URL: {}", e),
                                                 }
+                                                Err(e) => tracing::error!(
+                                                    "Failed to parse torrent from URL: {}",
+                                                    e
+                                                ),
                                             }
-                                            Err(e) => tracing::error!("Failed to read response body: {}", e),
-                                        },
-                                        Err(e) => tracing::error!("Failed to fetch URL: {}", e),
-                                    }
+                                        }
+                                        Err(e) => {
+                                            tracing::error!("Failed to read response body: {}", e)
+                                        }
+                                    },
+                                    Err(e) => tracing::error!("Failed to fetch URL: {}", e),
                                 });
                             }
                             u.set(String::new());
@@ -1998,7 +2003,13 @@ fn add_torrent_dialog_view(
                         };
                         let priorities: Vec<FilePriority> = checks
                             .iter()
-                            .map(|&c| if c { FilePriority::Normal } else { FilePriority::Skip })
+                            .map(|&c| {
+                                if c {
+                                    FilePriority::Normal
+                                } else {
+                                    FilePriority::Skip
+                                }
+                            })
                             .collect();
                         match engine.add_torrent_from_bytes(data, dir, Some(&priorities)) {
                             Ok(info_hash) => {

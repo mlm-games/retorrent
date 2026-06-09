@@ -57,7 +57,8 @@ impl PersistedDht {
                 listen_addr: dht.listen_addr.to_string(),
                 table_v4: v4.clone(),
                 table_v6: Some(v6.clone()),
-                peers: peers.into_iter()
+                peers: peers
+                    .into_iter()
                     .map(|(h, a)| PersistedPeerEntry {
                         info_hash: h.to_hex(),
                         addrs: a,
@@ -105,7 +106,9 @@ fn tmp_path_for(path: &Path) -> PathBuf {
     let pid = std::process::id();
     tmp.set_file_name(format!(
         "{}.tmp.{pid}",
-        path.file_name().and_then(|s| s.to_str()).unwrap_or("dht.json")
+        path.file_name()
+            .and_then(|s| s.to_str())
+            .unwrap_or("dht.json")
     ));
     tmp
 }
@@ -154,11 +157,10 @@ pub fn spawn_dumper(
     });
 }
 
-pub fn make_persistent_peer_store(
-    node_id: InfoHash,
-    persisted: &PersistedDht,
-) -> PeerStore {
-    let peers: Vec<(InfoHash, Vec<SocketAddr>)> = persisted.peers.iter()
+pub fn make_persistent_peer_store(node_id: InfoHash, persisted: &PersistedDht) -> PeerStore {
+    let peers: Vec<(InfoHash, Vec<SocketAddr>)> = persisted
+        .peers
+        .iter()
         .filter_map(|e| {
             let hash = InfoHash::from_hex(&e.info_hash)?;
             Some((hash, e.addrs.clone()))
@@ -174,7 +176,9 @@ mod tests {
     use crate::types::InfoHash;
     use std::net::{Ipv4Addr, SocketAddrV4};
 
-    fn test_id(byte: u8) -> InfoHash { InfoHash([byte; 20]) }
+    fn test_id(byte: u8) -> InfoHash {
+        InfoHash([byte; 20])
+    }
 
     fn make_table() -> RoutingTable {
         let id = test_id(0xab);
@@ -192,11 +196,13 @@ mod tests {
         let node_id = test_id(0x42);
         let v4 = make_table();
         let v6 = RoutingTable::new(node_id);
-        let peers = vec![
-            (test_id(0x11), vec![
-                SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::new(1, 2, 3, 4), 6881)),
-            ]),
-        ];
+        let peers = vec![(
+            test_id(0x11),
+            vec![SocketAddr::V4(SocketAddrV4::new(
+                Ipv4Addr::new(1, 2, 3, 4),
+                6881,
+            ))],
+        )];
         let ps = PeerStore::new_with_persistence(node_id, peers);
         let listen = SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::new(0, 0, 0, 0), 51413));
 
@@ -205,8 +211,13 @@ mod tests {
             listen_addr: listen.to_string(),
             table_v4: v4,
             table_v6: Some(v6),
-            peers: ps.collect_persisted().into_iter()
-                .map(|(h, a)| PersistedPeerEntry { info_hash: h.to_hex(), addrs: a })
+            peers: ps
+                .collect_persisted()
+                .into_iter()
+                .map(|(h, a)| PersistedPeerEntry {
+                    info_hash: h.to_hex(),
+                    addrs: a,
+                })
                 .collect(),
         };
         let json = serde_json::to_string_pretty(&persisted).expect("serialize");

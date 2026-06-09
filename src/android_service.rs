@@ -1,6 +1,6 @@
+use crate::PendingTorrent;
 use crate::engine::TorrentEngine;
 use crate::metainfo::MetaInfo;
-use crate::PendingTorrent;
 use jni::Env;
 use jni::errors;
 use jni::errors::ThrowRuntimeExAndDefault;
@@ -341,7 +341,10 @@ pub extern "system" fn Java_dev_mlm_retorrent_RetorrentActivity_nativeOnNewInten
     env.with_env(|env| -> errors::Result<()> {
         let array = unsafe { JByteArray::from_raw(env, data) };
         let bytes = env.convert_byte_array(&array)?;
-        tracing::info!("nativeOnNewIntent: forwarding {} bytes to repose deeplink API", bytes.len());
+        tracing::info!(
+            "nativeOnNewIntent: forwarding {} bytes to repose deeplink API",
+            bytes.len()
+        );
         repose_platform::push_deeplink(bytes);
         Ok(())
     })

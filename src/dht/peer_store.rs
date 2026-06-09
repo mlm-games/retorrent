@@ -67,8 +67,12 @@ impl PeerStore {
         let s = Self::new(self_id);
         let mut total = 0u32;
         for (info_hash, addrs) in peers {
-            let stored: Vec<StoredPeer> = addrs.into_iter()
-                .map(|addr| StoredPeer { addr, time: Utc::now() })
+            let stored: Vec<StoredPeer> = addrs
+                .into_iter()
+                .map(|addr| StoredPeer {
+                    addr,
+                    time: Utc::now(),
+                })
                 .collect();
             total += stored.len() as u32;
             s.peers.insert(info_hash, stored);
@@ -78,8 +82,14 @@ impl PeerStore {
     }
 
     pub fn collect_persisted(&self) -> Vec<(InfoHash, Vec<SocketAddr>)> {
-        self.peers.iter()
-            .map(|entry| (entry.key().clone(), entry.value().iter().map(|p| p.addr).collect()))
+        self.peers
+            .iter()
+            .map(|entry| {
+                (
+                    entry.key().clone(),
+                    entry.value().iter().map(|p| p.addr).collect(),
+                )
+            })
             .collect()
     }
 
@@ -97,21 +107,36 @@ impl PeerStore {
         let mut token = [0u8; 4];
         rand::rng().fill_bytes(&mut token);
         let mut tokens = self.tokens.write();
-        tokens.push_back(StoredToken { token, addr, node_id });
+        tokens.push_back(StoredToken {
+            token,
+            addr,
+            node_id,
+        });
         if tokens.len() > self.max_remembered_tokens as usize {
             tokens.pop_front();
         }
         token
     }
 
-    pub fn store_peer(&self, id: InfoHash, info_hash: InfoHash, token: &[u8], port: u16, implied_port: u8, mut addr: SocketAddr) -> bool {
+    pub fn store_peer(
+        &self,
+        id: InfoHash,
+        info_hash: InfoHash,
+        token: &[u8],
+        port: u16,
+        implied_port: u8,
+        mut addr: SocketAddr,
+    ) -> bool {
         if info_hash.distance(&self.self_id) > self.max_distance {
             trace!("peer store: info_hash too far");
             return false;
         }
-        if !self.tokens.read().iter().any(|t| {
-            t.token.as_slice() == token && t.addr == addr && t.node_id == id
-        }) {
+        if !self
+            .tokens
+            .read()
+            .iter()
+            .any(|t| t.token.as_slice() == token && t.addr == addr && t.node_id == id)
+        {
             trace!("peer store: token mismatch");
             return false;
         }
@@ -128,13 +153,19 @@ impl PeerStore {
                 if self.peers_len.load(Ordering::SeqCst) >= self.max_remembered_peers {
                     return false;
                 }
-                occ.get_mut().push(StoredPeer { addr, time: Utc::now() });
+                occ.get_mut().push(StoredPeer {
+                    addr,
+                    time: Utc::now(),
+                });
             }
             Entry::Vacant(vac) => {
                 if self.peers_len.load(Ordering::SeqCst) >= self.max_remembered_peers {
                     return false;
                 }
-                vac.insert(vec![StoredPeer { addr, time: Utc::now() }]);
+                vac.insert(vec![StoredPeer {
+                    addr,
+                    time: Utc::now(),
+                }]);
             }
         }
         self.peers_len.fetch_add(1, Ordering::SeqCst);

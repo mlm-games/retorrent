@@ -1,13 +1,13 @@
 use std::cmp::Reverse;
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::net::{IpAddr, SocketAddr, SocketAddrV4, SocketAddrV6};
-use std::sync::atomic::{AtomicU16, AtomicU32, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU16, AtomicU32, Ordering};
 use std::time::{Duration, Instant};
 
 use dashmap::DashMap;
-use futures::{Stream, StreamExt};
 use futures::stream::FuturesUnordered;
+use futures::{Stream, StreamExt};
 use parking_lot::RwLock;
 use rand::Rng;
 use serde::Serialize;
@@ -18,14 +18,16 @@ use tokio_util::sync::CancellationToken;
 use tracing::{debug, info, instrument, trace, warn};
 
 use crate::dht::{
-    Error, Result, INACTIVITY_TIMEOUT, REQUERY_INTERVAL, RESPONSE_TIMEOUT, DHT_BOOTSTRAP,
+    DHT_BOOTSTRAP, Error, INACTIVITY_TIMEOUT, REQUERY_INTERVAL, RESPONSE_TIMEOUT, Result,
     peer_store::PeerStore,
     protocol,
     routing_table::{InsertResult, NodeStatus, RoutingTable},
 };
 use crate::types::InfoHash;
 
-fn now() -> Instant { Instant::now() }
+fn now() -> Instant {
+    Instant::now()
+}
 
 const DHT_QUERIES_PER_SECOND: usize = 250;
 
@@ -106,7 +108,11 @@ struct PerIpState {
 }
 
 impl PerIpRateLimiter {
-    fn new() -> Self { Self { state: DashMap::new() } }
+    fn new() -> Self {
+        Self {
+            state: DashMap::new(),
+        }
+    }
 
     fn allow(&self, addr: SocketAddr) -> bool {
         let ip = addr.ip();
@@ -120,7 +126,11 @@ impl PerIpRateLimiter {
         let refill = (elapsed_ns / 1_000_000_000) as u32 * PER_IP_LIMIT_PER_SEC;
         if refill > 0 {
             entry.tokens.store(
-                entry.tokens.load(Ordering::Relaxed).saturating_add(refill).min(PER_IP_BURST),
+                entry
+                    .tokens
+                    .load(Ordering::Relaxed)
+                    .saturating_add(refill)
+                    .min(PER_IP_BURST),
                 Ordering::Relaxed,
             );
             *last = now;
@@ -162,10 +172,20 @@ mod tests {
         // Burst starts at PER_IP_BURST, so the first PER_IP_BURST calls must succeed.
         let mut allowed = 0;
         for _ in 0..(PER_IP_BURST + 50) {
-            if l.allow(addr) { allowed += 1; }
+            if l.allow(addr) {
+                allowed += 1;
+            }
         }
-        assert!(allowed <= PER_IP_BURST, "should not exceed burst: got {}", allowed);
-        assert!(allowed >= PER_IP_BURST, "should allow at least burst: got {}", allowed);
+        assert!(
+            allowed <= PER_IP_BURST,
+            "should not exceed burst: got {}",
+            allowed
+        );
+        assert!(
+            allowed >= PER_IP_BURST,
+            "should allow at least burst: got {}",
+            allowed
+        );
     }
 
     #[test]
@@ -174,7 +194,9 @@ mod tests {
         let a = SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::new(1, 2, 3, 4), 6881));
         let b = SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::new(5, 6, 7, 8), 6881));
         // Burn through a's bucket.
-        for _ in 0..(PER_IP_BURST + 50) { l.allow(a); }
+        for _ in 0..(PER_IP_BURST + 50) {
+            l.allow(a);
+        }
         // b should still be allowed.
         assert!(l.allow(b));
     }
@@ -209,7 +231,11 @@ struct WorkerSendRequest {
 enum Request {
     GetPeers(InfoHash),
     FindNode(InfoHash),
-    Announce { info_hash: InfoHash, token: Vec<u8>, port: u16 },
+    Announce {
+        info_hash: InfoHash,
+        token: Vec<u8>,
+        port: u16,
+    },
     Ping,
 }
 
@@ -296,7 +322,11 @@ impl DhtNode {
                 info_hash: *info_hash,
                 want,
             },
-            Request::Announce { info_hash, token, port } => protocol::Message::AnnouncePeerRequest {
+            Request::Announce {
+                info_hash,
+                token,
+                port,
+            } => protocol::Message::AnnouncePeerRequest {
                 transaction_id: tid_bytes.clone(),
                 id: self.id,
                 info_hash: *info_hash,
@@ -316,19 +346,37 @@ impl DhtNode {
         let (tx, rx) = oneshot::channel();
         self.inflight.insert(key, OutstandingRequest { done: tx });
         debug!("sending request tid={} to {}", tid, addr);
-        if self.worker_tx.send(WorkerSendRequest { our_tid: Some(tid), data, addr }).is_err() {
+        if self
+            .worker_tx
+            .send(WorkerSendRequest {
+                our_tid: Some(tid),
+                data,
+                addr,
+            })
+            .is_err()
+        {
             self.inflight.remove(&key);
             return Err(Error::DhtDead);
         }
         match tokio::time::timeout(RESPONSE_TIMEOUT, rx).await {
             Ok(Ok(r)) => r,
-            Ok(Err(_)) => { self.inflight.remove(&key); Err(Error::DhtDead) }
-            Err(_) => { self.inflight.remove(&key); Err(Error::ResponseTimeout(RESPONSE_TIMEOUT)) }
+            Ok(Err(_)) => {
+                self.inflight.remove(&key);
+                Err(Error::DhtDead)
+            }
+            Err(_) => {
+                self.inflight.remove(&key);
+                Err(Error::ResponseTimeout(RESPONSE_TIMEOUT))
+            }
         }
     }
 
     fn table_for(&self, addr: SocketAddr) -> &RwLock<RoutingTable> {
-        if addr.is_ipv4() { &self.routing_table_v4 } else { &self.routing_table_v6 }
+        if addr.is_ipv4() {
+            &self.routing_table_v4
+        } else {
+            &self.routing_table_v6
+        }
     }
 
     /// Record a voter's claim about our external IP. Promote the candidate to
@@ -337,16 +385,26 @@ impl DhtNode {
     fn note_external_ip(&self, claimed: IpAddr, voter: SocketAddr) {
         // Ignore claims that look like private/loopback addresses — those are
         // useless and can only come from a misconfigured node.
-        if claimed.is_loopback() || claimed.is_unspecified() { return; }
+        if claimed.is_loopback() || claimed.is_unspecified() {
+            return;
+        }
         match claimed {
             IpAddr::V4(v4) => {
-                if v4.is_private() || v4.is_link_local() { return; }
+                if v4.is_private() || v4.is_link_local() {
+                    return;
+                }
             }
             IpAddr::V6(v6) => {
                 let s = v6.segments();
-                if v6.is_multicast() { return; }
-                if (s[0] & 0xfe00) == 0xfc00 { return; } // unique local
-                if v6.segments()[0] == 0xfe80 { return; } // link-local
+                if v6.is_multicast() {
+                    return;
+                }
+                if (s[0] & 0xfe00) == 0xfc00 {
+                    return;
+                } // unique local
+                if v6.segments()[0] == 0xfe80 {
+                    return;
+                } // link-local
             }
         }
         // Each voter can only count once per claimed IP; track that.
@@ -365,9 +423,16 @@ impl DhtNode {
         }
     }
 
-    pub fn external_ip(&self) -> Option<IpAddr> { *self.external_ip.read() }
+    pub fn external_ip(&self) -> Option<IpAddr> {
+        *self.external_ip.read()
+    }
 
-    fn generate_compact_nodes(&self, target: InfoHash, table: &RoutingTable, want: protocol::Want) -> (Vec<u8>, Vec<u8>) {
+    fn generate_compact_nodes(
+        &self,
+        target: InfoHash,
+        table: &RoutingTable,
+        want: protocol::Want,
+    ) -> (Vec<u8>, Vec<u8>) {
         let mut nodes_v4 = Vec::new();
         let mut nodes_v6 = Vec::new();
         for node in table.sorted_by_distance_from(target, now()).iter().take(8) {
@@ -395,12 +460,13 @@ impl DhtNode {
     }
 
     fn handle_incoming(self: &Arc<Self>, msg: protocol::Message, addr: SocketAddr) -> Result<()> {
-        let is_response = matches!(&msg,
+        let is_response = matches!(
+            &msg,
             protocol::Message::Error { .. }
-            | protocol::Message::PingResponse { .. }
-            | protocol::Message::FindNodeResponse { .. }
-            | protocol::Message::GetPeersResponse { .. }
-            | protocol::Message::AnnouncePeerResponse { .. }
+                | protocol::Message::PingResponse { .. }
+                | protocol::Message::FindNodeResponse { .. }
+                | protocol::Message::GetPeersResponse { .. }
+                | protocol::Message::AnnouncePeerResponse { .. }
         );
 
         if is_response {
@@ -427,9 +493,15 @@ impl DhtNode {
             }
             let tid = msg.transaction_id();
             let tid_val = protocol::decode_transaction_id(tid).ok_or(Error::BadTransactionId)?;
-            let request = self.inflight.remove(&(tid_val, addr)).map(|(_, v)| v).ok_or(Error::RequestNotFound)?;
+            let request = self
+                .inflight
+                .remove(&(tid_val, addr))
+                .map(|(_, v)| v)
+                .ok_or(Error::RequestNotFound)?;
             let resp = match msg {
-                protocol::Message::Error { code, message, .. } => ResponseOrError::Error(code, message),
+                protocol::Message::Error { code, message, .. } => {
+                    ResponseOrError::Error(code, message)
+                }
                 m => ResponseOrError::Response(m),
             };
             let _ = request.done.send(Ok(resp));
@@ -441,31 +513,61 @@ impl DhtNode {
                 self.table_for(addr).write().mark_last_query(id, now());
                 let resp = protocol::serialize(&protocol::Message::PingResponse {
                     transaction_id: msg.transaction_id().to_vec(),
-                    id: self.id, ip: Some(addr),
+                    id: self.id,
+                    ip: Some(addr),
                 });
-                let _ = self.worker_tx.send(WorkerSendRequest { our_tid: None, data: resp, addr });
+                let _ = self.worker_tx.send(WorkerSendRequest {
+                    our_tid: None,
+                    data: resp,
+                    addr,
+                });
             }
-            protocol::Message::FindNodeRequest { id, target, want, .. } => {
+            protocol::Message::FindNodeRequest {
+                id, target, want, ..
+            } => {
                 self.table_for(addr).write().mark_last_query(id, now());
-                let want = if *want == protocol::Want::None { protocol::Want::for_addr(addr) } else { *want };
+                let want = if *want == protocol::Want::None {
+                    protocol::Want::for_addr(addr)
+                } else {
+                    *want
+                };
                 let (nodes, nodes6) = {
                     let table = self.table_for(addr).read();
                     self.generate_compact_nodes(*target, &table, want)
                 };
                 let resp = protocol::serialize(&protocol::Message::FindNodeResponse {
                     transaction_id: msg.transaction_id().to_vec(),
-                    id: self.id, nodes, nodes6, ip: Some(addr),
+                    id: self.id,
+                    nodes,
+                    nodes6,
+                    ip: Some(addr),
                 });
-                let _ = self.worker_tx.send(WorkerSendRequest { our_tid: None, data: resp, addr });
+                let _ = self.worker_tx.send(WorkerSendRequest {
+                    our_tid: None,
+                    data: resp,
+                    addr,
+                });
             }
-            protocol::Message::GetPeersRequest { id, info_hash, want, .. } => {
+            protocol::Message::GetPeersRequest {
+                id,
+                info_hash,
+                want,
+                ..
+            } => {
                 self.table_for(addr).write().mark_last_query(id, now());
-                let want = if *want == protocol::Want::None { protocol::Want::for_addr(addr) } else { *want };
+                let want = if *want == protocol::Want::None {
+                    protocol::Want::for_addr(addr)
+                } else {
+                    *want
+                };
                 let (nodes, nodes6) = {
                     let table = self.table_for(addr).read();
                     self.generate_compact_nodes(*info_hash, &table, want)
                 };
-                let values: Vec<SocketAddr> = self.peer_store.get_peers(*info_hash).into_iter()
+                let values: Vec<SocketAddr> = self
+                    .peer_store
+                    .get_peers(*info_hash)
+                    .into_iter()
                     .filter(|a| match (a, want) {
                         (SocketAddr::V4(_), protocol::Want::V4 | protocol::Want::Both) => true,
                         (SocketAddr::V6(_), protocol::Want::V6 | protocol::Want::Both) => true,
@@ -475,19 +577,40 @@ impl DhtNode {
                 let token = self.peer_store.gen_token_for(*id, addr);
                 let resp = protocol::serialize(&protocol::Message::GetPeersResponse {
                     transaction_id: msg.transaction_id().to_vec(),
-                    id: self.id, token: token.to_vec(),
-                    values, nodes, nodes6, ip: Some(addr),
+                    id: self.id,
+                    token: token.to_vec(),
+                    values,
+                    nodes,
+                    nodes6,
+                    ip: Some(addr),
                 });
-                let _ = self.worker_tx.send(WorkerSendRequest { our_tid: None, data: resp, addr });
+                let _ = self.worker_tx.send(WorkerSendRequest {
+                    our_tid: None,
+                    data: resp,
+                    addr,
+                });
             }
-            protocol::Message::AnnouncePeerRequest { id, info_hash, token, port, implied_port, .. } => {
+            protocol::Message::AnnouncePeerRequest {
+                id,
+                info_hash,
+                token,
+                port,
+                implied_port,
+                ..
+            } => {
                 self.table_for(addr).write().mark_last_query(id, now());
-                self.peer_store.store_peer(*id, *info_hash, token, *port, *implied_port, addr);
+                self.peer_store
+                    .store_peer(*id, *info_hash, token, *port, *implied_port, addr);
                 let resp = protocol::serialize(&protocol::Message::AnnouncePeerResponse {
                     transaction_id: msg.transaction_id().to_vec(),
-                    id: self.id, ip: Some(addr),
+                    id: self.id,
+                    ip: Some(addr),
                 });
-                let _ = self.worker_tx.send(WorkerSendRequest { our_tid: None, data: resp, addr });
+                let _ = self.worker_tx.send(WorkerSendRequest {
+                    our_tid: None,
+                    data: resp,
+                    addr,
+                });
             }
             _ => {}
         }
@@ -503,10 +626,18 @@ impl DhtNode {
         }
     }
 
-    pub fn listen_addr(&self) -> SocketAddr { self.listen_addr }
-    pub fn cancellation_token(&self) -> &CancellationToken { &self.cancellation_token }
+    pub fn listen_addr(&self) -> SocketAddr {
+        self.listen_addr
+    }
+    pub fn cancellation_token(&self) -> &CancellationToken {
+        &self.cancellation_token
+    }
 
-    pub fn get_peers(self: &Arc<Self>, info_hash: InfoHash, announce_port: Option<u16>) -> RequestPeersStream {
+    pub fn get_peers(
+        self: &Arc<Self>,
+        info_hash: InfoHash,
+        announce_port: Option<u16>,
+    ) -> RequestPeersStream {
         RequestPeersStream::new(self.clone(), info_hash, announce_port)
     }
 
@@ -520,7 +651,13 @@ impl DhtNode {
 
 trait RecursiveCallbacks: Sized + Send + Sync + 'static {
     fn on_start(&self, req: &RecursiveRequest<Self>, id: InfoHash, addr: SocketAddr);
-    fn on_end(&self, req: &RecursiveRequest<Self>, id: InfoHash, addr: SocketAddr, resp: &Result<ResponseOrError>);
+    fn on_end(
+        &self,
+        req: &RecursiveRequest<Self>,
+        id: InfoHash,
+        addr: SocketAddr,
+        resp: &Result<ResponseOrError>,
+    );
 }
 
 struct CallbacksFindNodes;
@@ -534,9 +671,19 @@ impl RecursiveCallbacks for CallbacksFindNodes {
             InsertResult::Ignored => {}
         }
     }
-    fn on_end(&self, req: &RecursiveRequest<Self>, id: InfoHash, addr: SocketAddr, resp: &Result<ResponseOrError>) {
+    fn on_end(
+        &self,
+        req: &RecursiveRequest<Self>,
+        id: InfoHash,
+        addr: SocketAddr,
+        resp: &Result<ResponseOrError>,
+    ) {
         let mut rt = req.dht.table_for(addr).write();
-        if resp.is_ok() { rt.mark_response(&id, now()); } else { rt.mark_error(&id); }
+        if resp.is_ok() {
+            rt.mark_response(&id, now());
+        } else {
+            rt.mark_error(&id);
+        }
     }
 }
 
@@ -545,25 +692,45 @@ struct CallbacksGetPeers {
 }
 impl RecursiveCallbacks for CallbacksGetPeers {
     fn on_start(&self, _: &RecursiveRequest<Self>, _: InfoHash, _: SocketAddr) {}
-    fn on_end(&self, req: &RecursiveRequest<Self>, target: InfoHash, addr: SocketAddr, resp: &Result<ResponseOrError>) {
-        let announce_port = match self.announce_port { Some(p) => p, None => return };
+    fn on_end(
+        &self,
+        req: &RecursiveRequest<Self>,
+        target: InfoHash,
+        addr: SocketAddr,
+        resp: &Result<ResponseOrError>,
+    ) {
+        let announce_port = match self.announce_port {
+            Some(p) => p,
+            None => return,
+        };
         let token = match resp {
-            Ok(ResponseOrError::Response(protocol::Message::GetPeersResponse { token, .. })) => token.clone(),
+            Ok(ResponseOrError::Response(protocol::Message::GetPeersResponse {
+                token, ..
+            })) => token.clone(),
             _ => return,
         };
         let min_distance = InfoHash::from_hex("0000ffffffffffffffffffffffffffffffffffff").unwrap();
-        if req.info_hash.distance(&target) > min_distance { return; }
+        if req.info_hash.distance(&target) > min_distance {
+            return;
+        }
         // BEP-42: do not store on nodes whose ID doesn't match their IP.
         if !crate::dht::bep42::validate_node_id(&target.0, addr.ip()) {
             debug!("skipping announce: BEP-42 validation failed for {}", addr);
             return;
         }
-        let (tid, data) = req.dht.create_message(&Request::Announce {
-            info_hash: req.info_hash,
-            token,
-            port: announce_port,
-        }, addr);
-        let _ = req.dht.worker_tx.send(WorkerSendRequest { our_tid: Some(tid), data, addr });
+        let (tid, data) = req.dht.create_message(
+            &Request::Announce {
+                info_hash: req.info_hash,
+                token,
+                port: announce_port,
+            },
+            addr,
+        );
+        let _ = req.dht.worker_tx.send(WorkerSendRequest {
+            our_tid: Some(tid),
+            data,
+            addr,
+        });
     }
 }
 
@@ -580,7 +747,12 @@ struct RecursiveRequest<C: RecursiveCallbacks> {
 }
 
 impl<C: RecursiveCallbacks> RecursiveRequest<C> {
-    async fn request_one(&self, id: Option<InfoHash>, addr: SocketAddr, depth: usize) -> Result<()> {
+    async fn request_one(
+        &self,
+        id: Option<InfoHash>,
+        addr: SocketAddr,
+        depth: usize,
+    ) -> Result<()> {
         if let Some(id) = id {
             self.callbacks.on_start(self, id, addr);
         }
@@ -600,14 +772,23 @@ impl<C: RecursiveCallbacks> RecursiveRequest<C> {
 
         self.mark_responded(addr, &response);
 
-        if let protocol::Message::GetPeersResponse { values, nodes, nodes6, .. } = &response {
+        if let protocol::Message::GetPeersResponse {
+            values,
+            nodes,
+            nodes6,
+            ..
+        } = &response
+        {
             for peer in values {
                 let _ = self.peer_tx.send(*peer);
             }
             for (node_id, node_addr) in protocol::parse_compact_nodes(nodes)
-                .into_iter().chain(protocol::parse_compact_nodes_v6(nodes6))
+                .into_iter()
+                .chain(protocol::parse_compact_nodes_v6(nodes6))
             {
-                if node_addr.is_ipv4() != addr.is_ipv4() { continue; }
+                if node_addr.is_ipv4() != addr.is_ipv4() {
+                    continue;
+                }
                 if self.should_request(node_id, node_addr, depth) {
                     let _ = self.node_tx.send((Some(node_id), node_addr, depth + 1));
                 }
@@ -615,28 +796,42 @@ impl<C: RecursiveCallbacks> RecursiveRequest<C> {
         }
         if let protocol::Message::FindNodeResponse { nodes, nodes6, .. } = &response {
             for (node_id, node_addr) in protocol::parse_compact_nodes(nodes)
-                .into_iter().chain(protocol::parse_compact_nodes_v6(nodes6))
+                .into_iter()
+                .chain(protocol::parse_compact_nodes_v6(nodes6))
             {
-                if node_addr.is_ipv4() != addr.is_ipv4() { continue; }
+                if node_addr.is_ipv4() != addr.is_ipv4() {
+                    continue;
+                }
                 if self.should_request(node_id, node_addr, depth) {
                     let _ = self.node_tx.send((Some(node_id), node_addr, depth + 1));
                 }
             }
         }
         if let Some(id) = id {
-            self.callbacks.on_end(self, id, addr, &Ok(ResponseOrError::Response(response)));
+            self.callbacks
+                .on_end(self, id, addr, &Ok(ResponseOrError::Response(response)));
         }
         Ok(())
     }
 
     fn mark_error(&self, addr: SocketAddr) {
-        if let Some(n) = self.useful_nodes.write().iter_mut().find(|n| n.addr == addr) {
+        if let Some(n) = self
+            .useful_nodes
+            .write()
+            .iter_mut()
+            .find(|n| n.addr == addr)
+        {
             n.errors_in_a_row += 1;
         }
     }
 
     fn mark_responded(&self, addr: SocketAddr, response: &protocol::Message) {
-        if let Some(node) = self.useful_nodes.write().iter_mut().find(|n| n.addr == addr) {
+        if let Some(node) = self
+            .useful_nodes
+            .write()
+            .iter_mut()
+            .find(|n| n.addr == addr)
+        {
             node.last_response = Some(now());
             node.errors_in_a_row = 0;
             if let protocol::Message::GetPeersResponse { values, .. } = response {
@@ -646,7 +841,9 @@ impl<C: RecursiveCallbacks> RecursiveRequest<C> {
     }
 
     fn should_request(&self, node_id: InfoHash, addr: SocketAddr, depth: usize) -> bool {
-        if depth >= self.max_depth { return false; }
+        if depth >= self.max_depth {
+            return false;
+        }
         let mut nodes = self.useful_nodes.write();
         if let Some(existing) = nodes.iter_mut().find(|n| n.id == node_id) {
             if now() - existing.last_request > Duration::from_secs(60) {
@@ -656,8 +853,12 @@ impl<C: RecursiveCallbacks> RecursiveRequest<C> {
             return false;
         }
         nodes.push(MaybeUsefulNode {
-            id: node_id, addr, last_request: now(),
-            last_response: None, returned_peers: false, errors_in_a_row: 0,
+            id: node_id,
+            addr,
+            last_request: now(),
+            last_response: None,
+            returned_peers: false,
+            errors_in_a_row: 0,
         });
         nodes.sort_by_key(|n| {
             let peers_desc = Reverse(n.returned_peers);
@@ -667,7 +868,9 @@ impl<C: RecursiveCallbacks> RecursiveRequest<C> {
             (peers_desc, resp_desc, dist, freshness)
         });
         if nodes.len() > self.useful_nodes_limit {
-            if nodes.pop().unwrap().id == node_id { return false; }
+            if nodes.pop().unwrap().id == node_id {
+                return false;
+            }
         }
         true
     }
@@ -675,15 +878,20 @@ impl<C: RecursiveCallbacks> RecursiveRequest<C> {
 
 impl RecursiveRequest<CallbacksFindNodes> {
     async fn find_node_for_routing_table(
-        dht: Arc<DhtNode>, target: InfoHash, addrs: Vec<SocketAddr>,
+        dht: Arc<DhtNode>,
+        target: InfoHash,
+        addrs: Vec<SocketAddr>,
     ) -> Result<()> {
         let (node_tx, mut node_rx) = unbounded_channel();
         let req = RecursiveRequest {
-            max_depth: 4, info_hash: target,
+            max_depth: 4,
+            info_hash: target,
             request: Request::FindNode(target),
-            dht, useful_nodes_limit: 32,
+            dht,
+            useful_nodes_limit: 32,
             useful_nodes: RwLock::new(Vec::new()),
-            peer_tx: unbounded_channel().0, node_tx,
+            peer_tx: unbounded_channel().0,
+            node_tx,
             callbacks: CallbacksFindNodes,
         };
         let mut futs = FuturesUnordered::new();
@@ -716,7 +924,11 @@ impl RecursiveRequest<CallbacksFindNodes> {
 }
 
 impl RecursiveRequest<CallbacksGetPeers> {
-    fn request_peers_forever(self: Arc<Self>, is_v4: bool, mut node_rx: UnboundedReceiver<(Option<InfoHash>, SocketAddr, usize)>) -> tokio::task::JoinHandle<()> {
+    fn request_peers_forever(
+        self: Arc<Self>,
+        is_v4: bool,
+        mut node_rx: UnboundedReceiver<(Option<InfoHash>, SocketAddr, usize)>,
+    ) -> tokio::task::JoinHandle<()> {
         tokio::spawn(async move {
             let this = &*self;
             let looper = async {
@@ -754,7 +966,8 @@ impl RecursiveRequest<CallbacksGetPeers> {
             SocketAddr::from(([0u16; 8], 0))
         };
         let table = self.dht.table_for(probe).read();
-        let count = table.sorted_by_distance_from(self.info_hash, now())
+        let count = table
+            .sorted_by_distance_from(self.info_hash, now())
             .iter()
             .filter(|n| n.addr().is_ipv4() == is_v4)
             .take(8)
@@ -776,18 +989,25 @@ impl RequestPeersStream {
         let make = |is_v4: bool, dht: Arc<DhtNode>, peer_tx: UnboundedSender<SocketAddr>| {
             let (node_tx, node_rx) = unbounded_channel();
             let rp = Arc::new(RecursiveRequest {
-                max_depth: 4, info_hash,
+                max_depth: 4,
+                info_hash,
                 useful_nodes_limit: 256,
                 request: Request::GetPeers(info_hash),
-                dht, useful_nodes: RwLock::new(Vec::new()),
-                peer_tx, node_tx,
+                dht,
+                useful_nodes: RwLock::new(Vec::new()),
+                peer_tx,
+                node_tx,
                 callbacks: CallbacksGetPeers { announce_port },
             });
             rp.request_peers_forever(is_v4, node_rx)
         };
         let v4 = make(true, dht.clone(), peer_tx.clone());
         let v6 = make(false, dht, peer_tx);
-        Self { rx: peer_rx, cancel_v4: v4, cancel_v6: v6 }
+        Self {
+            rx: peer_rx,
+            cancel_v4: v4,
+            cancel_v6: v6,
+        }
     }
 }
 
@@ -800,7 +1020,10 @@ impl Drop for RequestPeersStream {
 
 impl Stream for RequestPeersStream {
     type Item = SocketAddr;
-    fn poll_next(mut self: std::pin::Pin<&mut Self>, cx: &mut std::task::Context<'_>) -> std::task::Poll<Option<Self::Item>> {
+    fn poll_next(
+        mut self: std::pin::Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<Option<Self::Item>> {
         self.rx.poll_recv(cx)
     }
 }
@@ -812,16 +1035,25 @@ struct DhtWorker {
 
 impl DhtWorker {
     async fn bootstrap_hostname(&self, hostname: &str) -> Result<()> {
-        let addrs = tokio::net::lookup_host(hostname).await
-            .map_err(|e| Error::BootstrapLookup { hostname: hostname.to_string(), err: e })?;
+        let addrs =
+            tokio::net::lookup_host(hostname)
+                .await
+                .map_err(|e| Error::BootstrapLookup {
+                    hostname: hostname.to_string(),
+                    err: e,
+                })?;
         let addrs: Vec<_> = addrs.collect();
         let v4: Vec<_> = addrs.iter().filter(|a| a.is_ipv4()).copied().collect();
         let v6: Vec<_> = addrs.iter().filter(|a| a.is_ipv6()).copied().collect();
         if !v4.is_empty() {
-            let _ = RecursiveRequest::find_node_for_routing_table(self.dht.clone(), self.dht.id, v4).await;
+            let _ =
+                RecursiveRequest::find_node_for_routing_table(self.dht.clone(), self.dht.id, v4)
+                    .await;
         }
         if !v6.is_empty() {
-            let _ = RecursiveRequest::find_node_for_routing_table(self.dht.clone(), self.dht.id, v6).await;
+            let _ =
+                RecursiveRequest::find_node_for_routing_table(self.dht.clone(), self.dht.id, v6)
+                    .await;
         }
         Ok(())
     }
@@ -839,7 +1071,9 @@ impl DhtWorker {
                     }
                     Err(e) => {
                         warn!("bootstrap {} failed: {}", addr, e);
-                        if successes > 0 { break; }
+                        if successes > 0 {
+                            break;
+                        }
                         let jitter = rand::random::<u64>() % 1000;
                         tokio::time::sleep(Duration::from_millis(delay_secs * 1000 + jitter)).await;
                         delay_secs = (delay_secs * 2).min(max_delay);
@@ -847,7 +1081,9 @@ impl DhtWorker {
                 }
             }
         }
-        if successes == 0 { return Err(Error::BootstrapFailed); }
+        if successes == 0 {
+            return Err(Error::BootstrapFailed);
+        }
         Ok(())
     }
 
@@ -855,17 +1091,28 @@ impl DhtWorker {
         let mut interval = tokio::time::interval(INACTIVITY_TIMEOUT / 4);
         loop {
             interval.tick().await;
-            let table = if is_v4 { &self.dht.routing_table_v4 } else { &self.dht.routing_table_v6 };
+            let table = if is_v4 {
+                &self.dht.routing_table_v4
+            } else {
+                &self.dht.routing_table_v6
+            };
             let tn = now();
-            let nodes: Vec<_> = table.read().iter_nodes()
+            let nodes: Vec<_> = table
+                .read()
+                .iter_nodes()
                 .filter(|n| matches!(n.status(tn), NodeStatus::Questionable | NodeStatus::Unknown))
                 .map(|n| (n.id(), n.addr()))
                 .collect();
             for (id, addr) in nodes {
                 table.write().mark_outgoing_request(&id, tn);
                 match self.dht.request(Request::Ping, addr).await {
-                    Ok(_) => { table.write().mark_response(&id, tn); }
-                    Err(e) => { table.write().mark_error(&id); debug!("ping error: {}", e); }
+                    Ok(_) => {
+                        table.write().mark_response(&id, tn);
+                    }
+                    Err(e) => {
+                        table.write().mark_error(&id);
+                        debug!("ping error: {}", e);
+                    }
                 }
             }
         }
@@ -877,25 +1124,40 @@ impl DhtWorker {
         loop {
             interval.tick().await;
             let tn = now();
-            let table = if is_v4 { &self.dht.routing_table_v4 } else { &self.dht.routing_table_v6 };
-            let stale: Vec<_> = table.read().iter_buckets()
+            let table = if is_v4 {
+                &self.dht.routing_table_v4
+            } else {
+                &self.dht.routing_table_v6
+            };
+            let stale: Vec<_> = table
+                .read()
+                .iter_buckets()
                 .filter(|b| tn - b.leaf.last_refreshed > INACTIVITY_TIMEOUT)
                 .map(|b| b.random_id())
                 .collect();
             for random_id in stale {
-                let addrs: Vec<_> = table.read().sorted_by_distance_from(random_id, tn)
-                    .iter().take(8).map(|n| n.addr()).collect();
+                let addrs: Vec<_> = table
+                    .read()
+                    .sorted_by_distance_from(random_id, tn)
+                    .iter()
+                    .take(8)
+                    .map(|n| n.addr())
+                    .collect();
                 if !addrs.is_empty() {
                     let _ = RecursiveRequest::find_node_for_routing_table(
-                        self.dht.clone(), random_id, addrs,
-                    ).await;
+                        self.dht.clone(),
+                        random_id,
+                        addrs,
+                    )
+                    .await;
                 }
             }
         }
     }
 
     async fn framer(
-        socket: Arc<UdpSocket>, dht: Arc<DhtNode>,
+        socket: Arc<UdpSocket>,
+        dht: Arc<DhtNode>,
         mut in_rx: UnboundedReceiver<WorkerSendRequest>,
         out_tx: tokio::sync::mpsc::Sender<(protocol::Message, SocketAddr)>,
     ) -> Result<()> {
@@ -933,7 +1195,9 @@ impl DhtWorker {
             loop {
                 match socket_reader.recv_from(&mut buf).await {
                     Ok((size, addr)) => {
-                        if size == 0 { continue; }
+                        if size == 0 {
+                            continue;
+                        }
                         if !dht.inbound_rate_limiter.allow() {
                             debug!("global inbound rate limited ({})", addr);
                             continue;
@@ -963,10 +1227,15 @@ impl DhtWorker {
         }
     }
 
-    async fn start(self, in_rx: UnboundedReceiver<WorkerSendRequest>, bootstrap_addrs: &[String]) -> Result<()> {
+    async fn start(
+        self,
+        in_rx: UnboundedReceiver<WorkerSendRequest>,
+        bootstrap_addrs: &[String],
+    ) -> Result<()> {
         let socket = self.socket.clone();
         let dht = self.dht.clone();
-        let (out_tx, mut out_rx) = tokio::sync::mpsc::channel::<(protocol::Message, SocketAddr)>(256);
+        let (out_tx, mut out_rx) =
+            tokio::sync::mpsc::channel::<(protocol::Message, SocketAddr)>(256);
         let framer = Self::framer(socket, dht.clone(), in_rx, out_tx);
         let response_reader = async move {
             while let Some((msg, addr)) = out_rx.recv().await {
@@ -1018,9 +1287,18 @@ impl DhtWorker {
         interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
         loop {
             interval.tick().await;
-            let table = self.dht.routing_table_v4.read().closest_nodes(self.dht.id, 8);
+            let table = self
+                .dht
+                .routing_table_v4
+                .read()
+                .closest_nodes(self.dht.id, 8);
             if !table.is_empty() {
-                let _ = RecursiveRequest::find_node_for_routing_table(self.dht.clone(), self.dht.id, table).await;
+                let _ = RecursiveRequest::find_node_for_routing_table(
+                    self.dht.clone(),
+                    self.dht.id,
+                    table,
+                )
+                .await;
             }
         }
     }
@@ -1058,7 +1336,9 @@ impl DhtBuilder {
         Self::with_config(cfg).await
     }
 
-    pub async fn with_config(cfg: crate::dht::persistence::PersistentDhtConfig) -> Result<Arc<DhtNode>> {
+    pub async fn with_config(
+        cfg: crate::dht::persistence::PersistentDhtConfig,
+    ) -> Result<Arc<DhtNode>> {
         use crate::dht::persistence;
 
         let path = match cfg.config_filename.clone() {
@@ -1101,12 +1381,26 @@ impl DhtBuilder {
         let (in_tx, in_rx) = unbounded_channel();
         let token = CancellationToken::new();
         let dht = Arc::new(DhtNode::new_internal(
-            id, in_tx, table_v4, table_v6, actual_addr, peer_store, token,
+            id,
+            in_tx,
+            table_v4,
+            table_v6,
+            actual_addr,
+            peer_store,
+            token,
         ));
 
-        persistence::spawn_dumper(dht.clone(), path, dump_interval, dht.cancellation_token.clone());
+        persistence::spawn_dumper(
+            dht.clone(),
+            path,
+            dump_interval,
+            dht.cancellation_token.clone(),
+        );
 
-        let worker = DhtWorker { socket, dht: dht.clone() };
+        let worker = DhtWorker {
+            socket,
+            dht: dht.clone(),
+        };
         let bootstrap_addrs: Vec<String> = DHT_BOOTSTRAP.iter().map(|s| s.to_string()).collect();
         tokio::spawn(async move {
             if let Err(e) = worker.start(in_rx, &bootstrap_addrs).await {

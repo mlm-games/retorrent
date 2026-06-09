@@ -97,14 +97,11 @@ impl Config {
     }
 
     fn data_dir() -> PathBuf {
-        ANDROID_DATA_DIR
-            .get()
-            .cloned()
-            .unwrap_or_else(|| {
-                dirs::data_dir()
-                    .unwrap_or_else(|| PathBuf::from("."))
-                    .join("retorrent")
-            })
+        ANDROID_DATA_DIR.get().cloned().unwrap_or_else(|| {
+            dirs::data_dir()
+                .unwrap_or_else(|| PathBuf::from("."))
+                .join("retorrent")
+        })
     }
 
     fn config_path() -> PathBuf {

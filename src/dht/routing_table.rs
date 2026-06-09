@@ -5,8 +5,8 @@ use rand::Rng;
 use serde::{Deserialize, Deserializer, Serialize, Serializer, ser::SerializeStruct};
 use tracing::{debug, trace};
 
-use crate::types::InfoHash;
 use crate::dht::INACTIVITY_TIMEOUT;
+use crate::types::InfoHash;
 
 const BUCKET_MAX_SIZE: usize = 8;
 
@@ -18,19 +18,28 @@ pub struct LeafBucket {
 
 impl Serialize for LeafBucket {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where S: Serializer {
+    where
+        S: Serializer,
+    {
         let mut s = serializer.serialize_struct("LeafBucket", 2)?;
         s.serialize_field("nodes", &self.nodes)?;
-        s.serialize_field("last_refreshed", &format!("{:?}", self.last_refreshed.elapsed()))?;
+        s.serialize_field(
+            "last_refreshed",
+            &format!("{:?}", self.last_refreshed.elapsed()),
+        )?;
         s.end()
     }
 }
 
 impl<'de> Deserialize<'de> for LeafBucket {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where D: Deserializer<'de> {
+    where
+        D: Deserializer<'de>,
+    {
         #[derive(Deserialize)]
-        struct Tmp { nodes: Vec<RoutingTableNode> }
+        struct Tmp {
+            nodes: Vec<RoutingTableNode>,
+        }
         Tmp::deserialize(deserializer).map(|t| Self {
             nodes: t.nodes,
             last_refreshed: Instant::now(),
@@ -40,7 +49,10 @@ impl<'de> Deserialize<'de> for LeafBucket {
 
 impl Default for LeafBucket {
     fn default() -> Self {
-        Self { nodes: Default::default(), last_refreshed: Instant::now() }
+        Self {
+            nodes: Default::default(),
+            last_refreshed: Instant::now(),
+        }
     }
 }
 
@@ -59,7 +71,10 @@ struct BucketTreeNode {
 }
 
 impl Serialize for BucketTreeNode {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error> where S: Serializer {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
         use serde::ser::SerializeStruct;
         let mut s = serializer.serialize_struct("BucketTreeNode", 4)?;
         s.serialize_field("bits", &self.bits)?;
@@ -72,7 +87,9 @@ impl Serialize for BucketTreeNode {
 
 impl<'de> Deserialize<'de> for BucketTreeNode {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where D: Deserializer<'de> {
+    where
+        D: Deserializer<'de>,
+    {
         #[derive(Deserialize)]
         struct Tmp {
             bits: u8,
@@ -80,12 +97,16 @@ impl<'de> Deserialize<'de> for BucketTreeNode {
             end_inclusive: String,
             data: BucketTreeNodeData,
         }
-        Tmp::deserialize(deserializer).and_then(|t| Ok(Self {
-            bits: t.bits,
-            start: InfoHash::from_hex(&t.start).ok_or_else(|| serde::de::Error::custom("bad hex in start"))?,
-            end_inclusive: InfoHash::from_hex(&t.end_inclusive).ok_or_else(|| serde::de::Error::custom("bad hex in end_inclusive"))?,
-            data: t.data,
-        }))
+        Tmp::deserialize(deserializer).and_then(|t| {
+            Ok(Self {
+                bits: t.bits,
+                start: InfoHash::from_hex(&t.start)
+                    .ok_or_else(|| serde::de::Error::custom("bad hex in start"))?,
+                end_inclusive: InfoHash::from_hex(&t.end_inclusive)
+                    .ok_or_else(|| serde::de::Error::custom("bad hex in end_inclusive"))?,
+                data: t.data,
+            })
+        })
     }
 }
 
@@ -97,7 +118,10 @@ pub struct BucketTree {
 }
 
 impl Serialize for BucketTree {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error> where S: Serializer {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
         let mut s = serializer.serialize_struct("BucketTree", 3)?;
         s.serialize_field("data", &self.data)?;
         s.serialize_field("size", &self.size)?;
@@ -108,7 +132,9 @@ impl Serialize for BucketTree {
 
 impl<'de> Deserialize<'de> for BucketTree {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where D: Deserializer<'de> {
+    where
+        D: Deserializer<'de>,
+    {
         #[derive(Deserialize)]
         struct Tmp {
             data: Vec<BucketTreeNode>,
@@ -143,7 +169,10 @@ struct BucketTreeIterator<'a> {
 
 impl<'a> BucketTreeIterator<'a> {
     fn new(tree: &'a BucketTree) -> Self {
-        Self { tree, queue: vec![0] }
+        Self {
+            tree,
+            queue: vec![0],
+        }
     }
 }
 
@@ -156,8 +185,10 @@ impl<'a> Iterator for BucketTreeIterator<'a> {
                 Some(node) => match &node.data {
                     BucketTreeNodeData::Leaf(leaf) => {
                         return Some(BucketTreeIteratorItem {
-                            bits: node.bits, start: &node.start,
-                            end_inclusive: &node.end_inclusive, leaf,
+                            bits: node.bits,
+                            start: &node.start,
+                            end_inclusive: &node.end_inclusive,
+                            leaf,
                         });
                     }
                     BucketTreeNodeData::LeftRight(left, right) => {
@@ -183,7 +214,11 @@ pub fn generate_random_id(start: &InfoHash, bits: u8) -> InfoHash {
     id
 }
 
-fn compute_split(start: InfoHash, end: InfoHash, bits: u8) -> ((InfoHash, InfoHash), (InfoHash, InfoHash)) {
+fn compute_split(
+    start: InfoHash,
+    end: InfoHash,
+    bits: u8,
+) -> ((InfoHash, InfoHash), (InfoHash, InfoHash)) {
     let changing_bit = 160 - bits;
     let left_end = {
         let mut c = end;
@@ -246,13 +281,19 @@ impl BucketTree {
         }
     }
 
-    pub fn get_mut(&mut self, id: &InfoHash, refresh: Option<Instant>) -> Option<&mut RoutingTableNode> {
+    pub fn get_mut(
+        &mut self,
+        id: &InfoHash,
+        refresh: Option<Instant>,
+    ) -> Option<&mut RoutingTableNode> {
         let idx = self.get_leaf(id);
         match &mut self.data[idx].data {
             BucketTreeNodeData::Leaf(leaf) => {
                 let r = leaf.nodes.iter_mut().find(|n| n.id == *id);
                 if r.is_some() {
-                    if let Some(t) = refresh { leaf.last_refreshed = t; }
+                    if let Some(t) = refresh {
+                        leaf.last_refreshed = t;
+                    }
                 }
                 r
             }
@@ -265,7 +306,13 @@ impl BucketTree {
         self.insert_into_leaf(idx, self_id, id, addr)
     }
 
-    fn insert_into_leaf(&mut self, mut idx: usize, self_id: &InfoHash, id: InfoHash, addr: SocketAddr) -> InsertResult {
+    fn insert_into_leaf(
+        &mut self,
+        mut idx: usize,
+        self_id: &InfoHash,
+        id: InfoHash,
+        addr: SocketAddr,
+    ) -> InsertResult {
         let now = Instant::now();
         loop {
             let leaf = &mut self.data[idx];
@@ -279,11 +326,19 @@ impl BucketTree {
             }
 
             let mut new_node = RoutingTableNode {
-                id, addr, last_request: None, last_response: None,
-                last_query: None, errors_in_a_row: 0,
+                id,
+                addr,
+                last_request: None,
+                last_response: None,
+                last_query: None,
+                errors_in_a_row: 0,
             };
 
-            if let Some(bad) = nodes.nodes.iter_mut().find(|n| n.status(now) == NodeStatus::Bad) {
+            if let Some(bad) = nodes
+                .nodes
+                .iter_mut()
+                .find(|n| n.status(now) == NodeStatus::Bad)
+            {
                 std::mem::swap(bad, &mut new_node);
                 nodes.nodes.sort_by_key(|n| n.id);
                 nodes.last_refreshed = now;
@@ -309,20 +364,42 @@ impl BucketTree {
             let ((ls, le), (rs, re)) = compute_split(leaf.start, leaf.end_inclusive, leaf.bits);
             let (mut ld, mut rd) = (Vec::new(), Vec::new());
             for node in nodes.nodes.drain(..) {
-                if node.id < rs { ld.push(node); } else { rd.push(node); }
+                if node.id < rs {
+                    ld.push(node);
+                } else {
+                    rd.push(node);
+                }
             }
 
             let left = BucketTreeNode {
-                bits: leaf.bits - 1, start: ls, end_inclusive: le,
-                data: BucketTreeNodeData::Leaf(LeafBucket { nodes: ld, ..Default::default() }),
+                bits: leaf.bits - 1,
+                start: ls,
+                end_inclusive: le,
+                data: BucketTreeNodeData::Leaf(LeafBucket {
+                    nodes: ld,
+                    ..Default::default()
+                }),
             };
             let right = BucketTreeNode {
-                bits: leaf.bits - 1, start: rs, end_inclusive: re,
-                data: BucketTreeNodeData::Leaf(LeafBucket { nodes: rd, ..Default::default() }),
+                bits: leaf.bits - 1,
+                start: rs,
+                end_inclusive: re,
+                data: BucketTreeNodeData::Leaf(LeafBucket {
+                    nodes: rd,
+                    ..Default::default()
+                }),
             };
 
-            let left_idx = { let l = self.data.len(); self.data.push(left); l };
-            let right_idx = { let l = self.data.len(); self.data.push(right); l };
+            let left_idx = {
+                let l = self.data.len();
+                self.data.push(left);
+                l
+            };
+            let right_idx = {
+                let l = self.data.len();
+                self.data.push(right);
+                l
+            };
             self.data[idx].data = BucketTreeNodeData::LeftRight(left_idx, right_idx);
 
             idx = if id < rs { left_idx } else { right_idx };
@@ -341,7 +418,10 @@ pub struct RoutingTableNode {
 }
 
 impl Serialize for RoutingTableNode {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error> where S: Serializer {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
         let mut s = serializer.serialize_struct("RoutingTableNode", 4)?;
         s.serialize_field("id", &self.id.to_hex())?;
         s.serialize_field("addr", &self.addr)?;
@@ -353,7 +433,9 @@ impl Serialize for RoutingTableNode {
 
 impl<'de> Deserialize<'de> for RoutingTableNode {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where D: Deserializer<'de> {
+    where
+        D: Deserializer<'de>,
+    {
         #[derive(Deserialize)]
         struct Tmp {
             id: String,
@@ -364,7 +446,8 @@ impl<'de> Deserialize<'de> for RoutingTableNode {
             errors_in_a_row: usize,
         }
         let t = Tmp::deserialize(deserializer)?;
-        let id = InfoHash::from_hex(&t.id).ok_or_else(|| serde::de::Error::custom("bad hex in id"))?;
+        let id =
+            InfoHash::from_hex(&t.id).ok_or_else(|| serde::de::Error::custom("bad hex in id"))?;
         Ok(Self {
             id,
             addr: t.addr,
@@ -378,34 +461,56 @@ impl<'de> Deserialize<'de> for RoutingTableNode {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub enum NodeStatus {
-    Good, Questionable, Bad, Unknown,
+    Good,
+    Questionable,
+    Bad,
+    Unknown,
 }
 
 impl RoutingTableNode {
-    pub fn id(&self) -> InfoHash { self.id }
-    pub fn addr(&self) -> SocketAddr { self.addr }
+    pub fn id(&self) -> InfoHash {
+        self.id
+    }
+    pub fn addr(&self) -> SocketAddr {
+        self.addr
+    }
 
     pub fn status(&self, now: Instant) -> NodeStatus {
         match (self.last_request, self.last_response, self.last_query) {
             (Some(_), _, _) if self.errors_in_a_row >= 2 => NodeStatus::Bad,
             (Some(_), Some(last), _) | (Some(_), _, Some(last))
-                if now - last < INACTIVITY_TIMEOUT => NodeStatus::Good,
+                if now - last < INACTIVITY_TIMEOUT =>
+            {
+                NodeStatus::Good
+            }
             (last_out, _, Some(last_in)) | (last_out, Some(last_in), _)
                 if now - last_in > INACTIVITY_TIMEOUT
-                    && last_out.map(|e| now - e > INACTIVITY_TIMEOUT).unwrap_or(true) =>
-                NodeStatus::Questionable,
+                    && last_out
+                        .map(|e| now - e > INACTIVITY_TIMEOUT)
+                        .unwrap_or(true) =>
+            {
+                NodeStatus::Questionable
+            }
             _ => NodeStatus::Unknown,
         }
     }
 
-    pub fn mark_outgoing_request(&mut self, now: Instant) { self.last_request = Some(now); }
-    pub fn mark_last_query(&mut self, now: Instant) { self.last_query = Some(now); }
+    pub fn mark_outgoing_request(&mut self, now: Instant) {
+        self.last_request = Some(now);
+    }
+    pub fn mark_last_query(&mut self, now: Instant) {
+        self.last_query = Some(now);
+    }
     pub fn mark_response(&mut self, now: Instant) {
         self.last_response = Some(now);
-        if self.last_request.is_none() { self.last_request = Some(now); }
+        if self.last_request.is_none() {
+            self.last_request = Some(now);
+        }
         self.errors_in_a_row = 0;
     }
-    pub fn mark_error(&mut self) { self.errors_in_a_row += 1; }
+    pub fn mark_error(&mut self) {
+        self.errors_in_a_row += 1;
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -416,7 +521,10 @@ pub struct RoutingTable {
 }
 
 impl Serialize for RoutingTable {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error> where S: Serializer {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
         let mut s = serializer.serialize_struct("RoutingTable", 3)?;
         s.serialize_field("id", &self.id.to_hex())?;
         s.serialize_field("size", &self.size)?;
@@ -427,7 +535,9 @@ impl Serialize for RoutingTable {
 
 impl<'de> Deserialize<'de> for RoutingTable {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where D: Deserializer<'de> {
+    where
+        D: Deserializer<'de>,
+    {
         #[derive(Deserialize)]
         struct Tmp {
             id: String,
@@ -436,9 +546,14 @@ impl<'de> Deserialize<'de> for RoutingTable {
             buckets: BucketTree,
         }
         let t = Tmp::deserialize(deserializer)?;
-        let id = InfoHash::from_hex(&t.id).ok_or_else(|| serde::de::Error::custom("bad hex in id"))?;
+        let id =
+            InfoHash::from_hex(&t.id).ok_or_else(|| serde::de::Error::custom("bad hex in id"))?;
         let size = t.buckets.iter_nodes().count();
-        Ok(Self { id, size, buckets: t.buckets })
+        Ok(Self {
+            id,
+            size,
+            buckets: t.buckets,
+        })
     }
 }
 
@@ -453,10 +568,18 @@ impl RoutingTable {
         }
     }
 
-    pub fn id(&self) -> InfoHash { self.id }
-    pub fn len(&self) -> usize { self.size }
+    pub fn id(&self) -> InfoHash {
+        self.id
+    }
+    pub fn len(&self) -> usize {
+        self.size
+    }
 
-    pub fn sorted_by_distance_from(&self, target: InfoHash, now: Instant) -> Vec<&RoutingTableNode> {
+    pub fn sorted_by_distance_from(
+        &self,
+        target: InfoHash,
+        now: Instant,
+    ) -> Vec<&RoutingTableNode> {
         let mut result: Vec<_> = self.buckets.iter_nodes().collect();
         result.sort_by_key(|n| {
             let status_ord = match n.status(now) {
@@ -492,25 +615,51 @@ impl RoutingTable {
         let result = self.buckets.add_node(&self.id, id, addr);
         match &result {
             InsertResult::WasExisting => {}
-            InsertResult::ReplacedBad(_) | InsertResult::Added => { self.size += 1; }
+            InsertResult::ReplacedBad(_) | InsertResult::Added => {
+                self.size += 1;
+            }
             InsertResult::Ignored => {}
         }
         result
     }
 
     pub fn mark_outgoing_request(&mut self, id: &InfoHash, now: Instant) -> bool {
-        self.buckets.get_mut(id, None).map(|n| { n.mark_outgoing_request(now); true }).unwrap_or(false)
+        self.buckets
+            .get_mut(id, None)
+            .map(|n| {
+                n.mark_outgoing_request(now);
+                true
+            })
+            .unwrap_or(false)
     }
 
     pub fn mark_response(&mut self, id: &InfoHash, now: Instant) -> bool {
-        self.buckets.get_mut(id, Some(now)).map(|n| { n.mark_response(now); true }).unwrap_or(false)
+        self.buckets
+            .get_mut(id, Some(now))
+            .map(|n| {
+                n.mark_response(now);
+                true
+            })
+            .unwrap_or(false)
     }
 
     pub fn mark_error(&mut self, id: &InfoHash) -> bool {
-        self.buckets.get_mut(id, None).map(|n| { n.mark_error(); true }).unwrap_or(false)
+        self.buckets
+            .get_mut(id, None)
+            .map(|n| {
+                n.mark_error();
+                true
+            })
+            .unwrap_or(false)
     }
 
     pub fn mark_last_query(&mut self, id: &InfoHash, now: Instant) -> bool {
-        self.buckets.get_mut(id, None).map(|n| { n.mark_last_query(now); true }).unwrap_or(false)
+        self.buckets
+            .get_mut(id, None)
+            .map(|n| {
+                n.mark_last_query(now);
+                true
+            })
+            .unwrap_or(false)
     }
 }

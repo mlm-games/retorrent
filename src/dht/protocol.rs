@@ -11,7 +11,9 @@ pub fn encode_transaction_id(tid: u16) -> Vec<u8> {
 }
 
 pub fn decode_transaction_id(data: &[u8]) -> Option<u16> {
-    if data.len() != 2 { return None; }
+    if data.len() != 2 {
+        return None;
+    }
     Some((data[0] as u16) << 8 | data[1] as u16)
 }
 
@@ -103,7 +105,9 @@ fn build_compact_node_info_v4(id: InfoHash, addr: SocketAddrV4) -> Vec<u8> {
 }
 
 fn parse_compact_node_info_v4(data: &[u8]) -> Option<(InfoHash, SocketAddrV4)> {
-    if data.len() < 26 { return None; }
+    if data.len() < 26 {
+        return None;
+    }
     let id = InfoHash::from_bytes(&data[..20])?;
     let ip = Ipv4Addr::new(data[20], data[21], data[22], data[23]);
     let port = u16::from_be_bytes([data[24], data[25]]);
@@ -119,7 +123,9 @@ fn build_compact_node_info_v6(id: InfoHash, addr: SocketAddrV6) -> Vec<u8> {
 }
 
 fn parse_compact_node_info_v6(data: &[u8]) -> Option<(InfoHash, SocketAddrV6)> {
-    if data.len() < 38 { return None; }
+    if data.len() < 38 {
+        return None;
+    }
     let id = InfoHash::from_bytes(&data[..20])?;
     let ip_bytes = &data[20..36];
     let octets: [u8; 16] = ip_bytes.try_into().ok()?;
@@ -201,15 +207,61 @@ fn bencode_id20(id: InfoHash) -> BencodeValue {
 
 #[derive(Debug, Clone)]
 pub enum Message {
-    PingRequest { transaction_id: Vec<u8>, id: InfoHash },
-    PingResponse { transaction_id: Vec<u8>, id: InfoHash, ip: Option<SocketAddr> },
-    FindNodeRequest { transaction_id: Vec<u8>, id: InfoHash, target: InfoHash, want: Want },
-    FindNodeResponse { transaction_id: Vec<u8>, id: InfoHash, nodes: Vec<u8>, nodes6: Vec<u8>, ip: Option<SocketAddr> },
-    GetPeersRequest { transaction_id: Vec<u8>, id: InfoHash, info_hash: InfoHash, want: Want },
-    GetPeersResponse { transaction_id: Vec<u8>, id: InfoHash, token: Vec<u8>, values: Vec<SocketAddr>, nodes: Vec<u8>, nodes6: Vec<u8>, ip: Option<SocketAddr> },
-    AnnouncePeerRequest { transaction_id: Vec<u8>, id: InfoHash, info_hash: InfoHash, token: Vec<u8>, port: u16, implied_port: u8 },
-    AnnouncePeerResponse { transaction_id: Vec<u8>, id: InfoHash, ip: Option<SocketAddr> },
-    Error { transaction_id: Vec<u8>, code: i32, message: Vec<u8> },
+    PingRequest {
+        transaction_id: Vec<u8>,
+        id: InfoHash,
+    },
+    PingResponse {
+        transaction_id: Vec<u8>,
+        id: InfoHash,
+        ip: Option<SocketAddr>,
+    },
+    FindNodeRequest {
+        transaction_id: Vec<u8>,
+        id: InfoHash,
+        target: InfoHash,
+        want: Want,
+    },
+    FindNodeResponse {
+        transaction_id: Vec<u8>,
+        id: InfoHash,
+        nodes: Vec<u8>,
+        nodes6: Vec<u8>,
+        ip: Option<SocketAddr>,
+    },
+    GetPeersRequest {
+        transaction_id: Vec<u8>,
+        id: InfoHash,
+        info_hash: InfoHash,
+        want: Want,
+    },
+    GetPeersResponse {
+        transaction_id: Vec<u8>,
+        id: InfoHash,
+        token: Vec<u8>,
+        values: Vec<SocketAddr>,
+        nodes: Vec<u8>,
+        nodes6: Vec<u8>,
+        ip: Option<SocketAddr>,
+    },
+    AnnouncePeerRequest {
+        transaction_id: Vec<u8>,
+        id: InfoHash,
+        info_hash: InfoHash,
+        token: Vec<u8>,
+        port: u16,
+        implied_port: u8,
+    },
+    AnnouncePeerResponse {
+        transaction_id: Vec<u8>,
+        id: InfoHash,
+        ip: Option<SocketAddr>,
+    },
+    Error {
+        transaction_id: Vec<u8>,
+        code: i32,
+        message: Vec<u8>,
+    },
 }
 
 impl Message {
@@ -234,12 +286,17 @@ pub fn serialize(message: &Message) -> Vec<u8> {
             (String::from("t"), bencode_str(transaction_id)),
             (String::from("y"), bencode_str(b"q")),
             (String::from("q"), bencode_str(b"ping")),
-            (String::from("a"), BencodeValue::Dict(BTreeMap::from([
-                (String::from("id"), bencode_id20(*id)),
-            ]))),
+            (
+                String::from("a"),
+                BencodeValue::Dict(BTreeMap::from([(String::from("id"), bencode_id20(*id))])),
+            ),
         ])),
 
-        Message::PingResponse { transaction_id, id, ip } => {
+        Message::PingResponse {
+            transaction_id,
+            id,
+            ip,
+        } => {
             let mut r = BTreeMap::new();
             r.insert(String::from("id"), bencode_id20(*id));
             let mut d = BTreeMap::new();
@@ -253,7 +310,12 @@ pub fn serialize(message: &Message) -> Vec<u8> {
             BencodeValue::Dict(d)
         }
 
-        Message::FindNodeRequest { transaction_id, id, target, want } => {
+        Message::FindNodeRequest {
+            transaction_id,
+            id,
+            target,
+            want,
+        } => {
             let mut a = BTreeMap::new();
             a.insert(String::from("id"), bencode_id20(*id));
             a.insert(String::from("target"), bencode_id20(*target));
@@ -268,7 +330,13 @@ pub fn serialize(message: &Message) -> Vec<u8> {
             ]))
         }
 
-        Message::FindNodeResponse { transaction_id, id, nodes, nodes6, ip } => {
+        Message::FindNodeResponse {
+            transaction_id,
+            id,
+            nodes,
+            nodes6,
+            ip,
+        } => {
             let mut r = BTreeMap::new();
             r.insert(String::from("id"), bencode_id20(*id));
             if !nodes.is_empty() {
@@ -282,12 +350,20 @@ pub fn serialize(message: &Message) -> Vec<u8> {
             d.insert(String::from("y"), bencode_str(b"r"));
             d.insert(String::from("r"), BencodeValue::Dict(r));
             if let Some(addr) = ip {
-                d.insert(String::from("ip"), bencode_str(&build_compact_peer_addr(*addr)));
+                d.insert(
+                    String::from("ip"),
+                    bencode_str(&build_compact_peer_addr(*addr)),
+                );
             }
             BencodeValue::Dict(d)
         }
 
-        Message::GetPeersRequest { transaction_id, id, info_hash, want } => {
+        Message::GetPeersRequest {
+            transaction_id,
+            id,
+            info_hash,
+            want,
+        } => {
             let mut a = BTreeMap::new();
             a.insert(String::from("id"), bencode_id20(*id));
             a.insert(String::from("info_hash"), bencode_id20(*info_hash));
@@ -302,12 +378,21 @@ pub fn serialize(message: &Message) -> Vec<u8> {
             ]))
         }
 
-        Message::GetPeersResponse { transaction_id, id, token, values, nodes, nodes6, ip } => {
+        Message::GetPeersResponse {
+            transaction_id,
+            id,
+            token,
+            values,
+            nodes,
+            nodes6,
+            ip,
+        } => {
             let mut r = BTreeMap::new();
             r.insert(String::from("id"), bencode_id20(*id));
             r.insert(String::from("token"), bencode_str(token));
             if !values.is_empty() {
-                let list: Vec<BencodeValue> = values.iter()
+                let list: Vec<BencodeValue> = values
+                    .iter()
                     .map(|a| bencode_str(&build_compact_peer_addr(*a)))
                     .collect();
                 r.insert(String::from("values"), BencodeValue::List(list));
@@ -323,25 +408,45 @@ pub fn serialize(message: &Message) -> Vec<u8> {
             d.insert(String::from("y"), bencode_str(b"r"));
             d.insert(String::from("r"), BencodeValue::Dict(r));
             if let Some(addr) = ip {
-                d.insert(String::from("ip"), bencode_str(&build_compact_peer_addr(*addr)));
+                d.insert(
+                    String::from("ip"),
+                    bencode_str(&build_compact_peer_addr(*addr)),
+                );
             }
             BencodeValue::Dict(d)
         }
 
-        Message::AnnouncePeerRequest { transaction_id, id, info_hash, token, port, implied_port } => BencodeValue::Dict(BTreeMap::from([
+        Message::AnnouncePeerRequest {
+            transaction_id,
+            id,
+            info_hash,
+            token,
+            port,
+            implied_port,
+        } => BencodeValue::Dict(BTreeMap::from([
             (String::from("t"), bencode_str(transaction_id)),
             (String::from("y"), bencode_str(b"q")),
             (String::from("q"), bencode_str(b"announce_peer")),
-            (String::from("a"), BencodeValue::Dict(BTreeMap::from([
-                (String::from("id"), bencode_id20(*id)),
-                (String::from("info_hash"), bencode_id20(*info_hash)),
-                (String::from("token"), bencode_str(token)),
-                (String::from("port"), bencode_int(*port as i64)),
-                (String::from("implied_port"), bencode_int(*implied_port as i64)),
-            ]))),
+            (
+                String::from("a"),
+                BencodeValue::Dict(BTreeMap::from([
+                    (String::from("id"), bencode_id20(*id)),
+                    (String::from("info_hash"), bencode_id20(*info_hash)),
+                    (String::from("token"), bencode_str(token)),
+                    (String::from("port"), bencode_int(*port as i64)),
+                    (
+                        String::from("implied_port"),
+                        bencode_int(*implied_port as i64),
+                    ),
+                ])),
+            ),
         ])),
 
-        Message::AnnouncePeerResponse { transaction_id, id, ip } => {
+        Message::AnnouncePeerResponse {
+            transaction_id,
+            id,
+            ip,
+        } => {
             let mut r = BTreeMap::new();
             r.insert(String::from("id"), bencode_id20(*id));
             let mut d = BTreeMap::new();
@@ -349,18 +454,25 @@ pub fn serialize(message: &Message) -> Vec<u8> {
             d.insert(String::from("y"), bencode_str(b"r"));
             d.insert(String::from("r"), BencodeValue::Dict(r));
             if let Some(addr) = ip {
-                d.insert(String::from("ip"), bencode_str(&build_compact_peer_addr(*addr)));
+                d.insert(
+                    String::from("ip"),
+                    bencode_str(&build_compact_peer_addr(*addr)),
+                );
             }
             BencodeValue::Dict(d)
         }
 
-        Message::Error { transaction_id, code, message } => BencodeValue::Dict(BTreeMap::from([
+        Message::Error {
+            transaction_id,
+            code,
+            message,
+        } => BencodeValue::Dict(BTreeMap::from([
             (String::from("t"), bencode_str(transaction_id)),
             (String::from("y"), bencode_str(b"e")),
-            (String::from("e"), BencodeValue::List(vec![
-                bencode_int(*code as i64),
-                bencode_str(message),
-            ])),
+            (
+                String::from("e"),
+                BencodeValue::List(vec![bencode_int(*code as i64), bencode_str(message)]),
+            ),
         ])),
     };
     BencodeParser::encode(&dict)
@@ -379,25 +491,51 @@ pub fn deserialize(data: &[u8]) -> Option<Message> {
             let a = dict.get("a")?.as_dict()?;
             let id = parse_id20(a.get("id")?.as_bytes()?)?;
             match q {
-                b"ping" => Some(Message::PingRequest { transaction_id: t, id }),
+                b"ping" => Some(Message::PingRequest {
+                    transaction_id: t,
+                    id,
+                }),
                 b"find_node" => {
                     let target = parse_id20(a.get("target")?.as_bytes()?)?;
-                    let want = a.get("want").and_then(|v| v.as_list())
-                        .map(Want::from_list).unwrap_or(Want::None);
-                    Some(Message::FindNodeRequest { transaction_id: t, id, target, want })
+                    let want = a
+                        .get("want")
+                        .and_then(|v| v.as_list())
+                        .map(Want::from_list)
+                        .unwrap_or(Want::None);
+                    Some(Message::FindNodeRequest {
+                        transaction_id: t,
+                        id,
+                        target,
+                        want,
+                    })
                 }
                 b"get_peers" => {
                     let info_hash = parse_id20(a.get("info_hash")?.as_bytes()?)?;
-                    let want = a.get("want").and_then(|v| v.as_list())
-                        .map(Want::from_list).unwrap_or(Want::None);
-                    Some(Message::GetPeersRequest { transaction_id: t, id, info_hash, want })
+                    let want = a
+                        .get("want")
+                        .and_then(|v| v.as_list())
+                        .map(Want::from_list)
+                        .unwrap_or(Want::None);
+                    Some(Message::GetPeersRequest {
+                        transaction_id: t,
+                        id,
+                        info_hash,
+                        want,
+                    })
                 }
                 b"announce_peer" => {
                     let info_hash = parse_id20(a.get("info_hash")?.as_bytes()?)?;
                     let token = a.get("token")?.as_bytes()?.to_vec();
                     let port = a.get("port")?.as_integer().unwrap_or(0) as u16;
                     let implied_port = a.get("implied_port")?.as_integer().unwrap_or(0) as u8;
-                    Some(Message::AnnouncePeerRequest { transaction_id: t, id, info_hash, token, port, implied_port })
+                    Some(Message::AnnouncePeerRequest {
+                        transaction_id: t,
+                        id,
+                        info_hash,
+                        token,
+                        port,
+                        implied_port,
+                    })
                 }
                 _ => None,
             }
@@ -405,45 +543,95 @@ pub fn deserialize(data: &[u8]) -> Option<Message> {
         b"r" => {
             let r = dict.get("r")?.as_dict()?;
             let id = parse_id20(r.get("id")?.as_bytes()?)?;
-            let ip = dict.get("ip").and_then(|v| parse_compact_peer_addr(v.as_bytes()?));
+            let ip = dict
+                .get("ip")
+                .and_then(|v| parse_compact_peer_addr(v.as_bytes()?));
 
             let has_token = r.contains_key("token");
             let has_values = r.contains_key("values");
             let has_nodes = r.contains_key("nodes");
 
             if has_token || has_values {
-                let token = r.get("token").map(|v| v.as_bytes().unwrap_or_default().to_vec()).unwrap_or_default();
-                let values = r.get("values").map(|v| {
-                    v.as_list().map(|list| {
-                        list.iter()
-                            .filter_map(|item| item.as_bytes())
-                            .filter_map(parse_compact_peer_addr)
-                            .collect::<Vec<SocketAddr>>()
-                    }).unwrap_or_default()
-                }).unwrap_or_default();
-                let nodes = r.get("nodes").and_then(|v| v.as_bytes()).unwrap_or_default().to_vec();
-                let nodes6 = r.get("nodes6").and_then(|v| v.as_bytes()).unwrap_or_default().to_vec();
-                Some(Message::GetPeersResponse { transaction_id: t, id, token, values, nodes, nodes6, ip })
+                let token = r
+                    .get("token")
+                    .map(|v| v.as_bytes().unwrap_or_default().to_vec())
+                    .unwrap_or_default();
+                let values = r
+                    .get("values")
+                    .map(|v| {
+                        v.as_list()
+                            .map(|list| {
+                                list.iter()
+                                    .filter_map(|item| item.as_bytes())
+                                    .filter_map(parse_compact_peer_addr)
+                                    .collect::<Vec<SocketAddr>>()
+                            })
+                            .unwrap_or_default()
+                    })
+                    .unwrap_or_default();
+                let nodes = r
+                    .get("nodes")
+                    .and_then(|v| v.as_bytes())
+                    .unwrap_or_default()
+                    .to_vec();
+                let nodes6 = r
+                    .get("nodes6")
+                    .and_then(|v| v.as_bytes())
+                    .unwrap_or_default()
+                    .to_vec();
+                Some(Message::GetPeersResponse {
+                    transaction_id: t,
+                    id,
+                    token,
+                    values,
+                    nodes,
+                    nodes6,
+                    ip,
+                })
             } else if has_nodes {
-                let nodes = r.get("nodes").and_then(|v| v.as_bytes()).unwrap_or_default().to_vec();
-                let nodes6 = r.get("nodes6").and_then(|v| v.as_bytes()).unwrap_or_default().to_vec();
-                Some(Message::FindNodeResponse { transaction_id: t, id, nodes, nodes6, ip })
+                let nodes = r
+                    .get("nodes")
+                    .and_then(|v| v.as_bytes())
+                    .unwrap_or_default()
+                    .to_vec();
+                let nodes6 = r
+                    .get("nodes6")
+                    .and_then(|v| v.as_bytes())
+                    .unwrap_or_default()
+                    .to_vec();
+                Some(Message::FindNodeResponse {
+                    transaction_id: t,
+                    id,
+                    nodes,
+                    nodes6,
+                    ip,
+                })
             } else {
-                Some(Message::PingResponse { transaction_id: t, id, ip })
+                Some(Message::PingResponse {
+                    transaction_id: t,
+                    id,
+                    ip,
+                })
             }
         }
         b"e" => {
             let e = dict.get("e")?.as_list()?;
             let code = e.first().and_then(|v| v.as_integer()).unwrap_or(0) as i32;
             let msg = e.get(1).and_then(|v| v.as_bytes()).unwrap_or(b"").to_vec();
-            Some(Message::Error { transaction_id: t, code, message: msg })
+            Some(Message::Error {
+                transaction_id: t,
+                code,
+                message: msg,
+            })
         }
         _ => None,
     }
 }
 
 fn parse_id20(data: &[u8]) -> Option<InfoHash> {
-    if data.len() != 20 { return None; }
+    if data.len() != 20 {
+        return None;
+    }
     let mut arr = [0u8; 20];
     arr.copy_from_slice(data);
     Some(InfoHash(arr))
@@ -468,7 +656,10 @@ mod tests {
         let bytes = serialize(&msg);
         let parsed = deserialize(&bytes).expect("deserialize");
         match parsed {
-            Message::PingRequest { transaction_id, id: pid } => {
+            Message::PingRequest {
+                transaction_id,
+                id: pid,
+            } => {
                 assert_eq!(transaction_id, vec![0x12, 0x34]);
                 assert_eq!(pid, id);
             }
@@ -489,7 +680,12 @@ mod tests {
         let bytes = serialize(&msg);
         let parsed = deserialize(&bytes).expect("deserialize");
         match parsed {
-            Message::FindNodeRequest { id: pid, target: pt, want, .. } => {
+            Message::FindNodeRequest {
+                id: pid,
+                target: pt,
+                want,
+                ..
+            } => {
                 assert_eq!(pid, id);
                 assert_eq!(pt, target);
                 assert_eq!(want, Want::V4);
@@ -515,12 +711,24 @@ mod tests {
         };
         let bytes = serialize(&msg);
         let parsed_val = BencodeParser::parse(&bytes).expect("parse");
-        let r = parsed_val.as_dict().expect("dict").get("r").expect("r").as_dict().expect("r dict");
+        let r = parsed_val
+            .as_dict()
+            .expect("dict")
+            .get("r")
+            .expect("r")
+            .as_dict()
+            .expect("r dict");
         let values_val = r.get("values").expect("values field");
-        assert!(matches!(values_val, BencodeValue::List(_)), "values should be a bencode list, got {:?}", values_val);
+        assert!(
+            matches!(values_val, BencodeValue::List(_)),
+            "values should be a bencode list, got {:?}",
+            values_val
+        );
         let parsed = deserialize(&bytes).expect("deserialize");
         match parsed {
-            Message::GetPeersResponse { values: pv, token, .. } => {
+            Message::GetPeersResponse {
+                values: pv, token, ..
+            } => {
                 assert_eq!(pv, values);
                 assert_eq!(token, b"abcde");
             }
@@ -545,7 +753,9 @@ mod tests {
         assert_eq!(&bytes[..expected.len()], &expected[..]);
         let parsed = deserialize(&bytes).expect("deserialize");
         match parsed {
-            Message::AnnouncePeerRequest { port, implied_port, .. } => {
+            Message::AnnouncePeerRequest {
+                port, implied_port, ..
+            } => {
                 assert_eq!(port, 6881);
                 assert_eq!(implied_port, 0);
             }
@@ -564,7 +774,9 @@ mod tests {
         let mut nodes6 = Vec::new();
         let v6_id = test_id(0x77);
         nodes6.extend_from_slice(&v6_id.0);
-        nodes6.extend_from_slice(&[0x20, 0x01, 0x0d, 0xb8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x01]);
+        nodes6.extend_from_slice(&[
+            0x20, 0x01, 0x0d, 0xb8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x01,
+        ]);
         nodes6.extend_from_slice(&51413u16.to_be_bytes());
         let msg = Message::FindNodeResponse {
             transaction_id: b"q2".to_vec(),
@@ -576,7 +788,11 @@ mod tests {
         let bytes = serialize(&msg);
         let parsed = deserialize(&bytes).expect("deserialize");
         match parsed {
-            Message::FindNodeResponse { nodes: pn, nodes6: pn6, .. } => {
+            Message::FindNodeResponse {
+                nodes: pn,
+                nodes6: pn6,
+                ..
+            } => {
                 assert_eq!(pn, nodes);
                 assert_eq!(pn6, nodes6);
             }

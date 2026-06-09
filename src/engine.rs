@@ -146,13 +146,7 @@ impl TorrentEngine {
             tracing::warn!("Failed to create download dir {:?}: {}", dir, e);
         }
 
-        let session = TorrentSession::new(
-            meta,
-            dir,
-            self.peer_id,
-            self.config.clone(),
-            None,
-        )?;
+        let session = TorrentSession::new(meta, dir, self.peer_id, self.config.clone(), None)?;
 
         session.stats.lock().state = TorrentState::FetchingMetadata;
 

@@ -8,21 +8,29 @@ use std::time::Instant;
 pub struct InfoHash(pub [u8; 20]);
 
 impl InfoHash {
-    pub fn as_bytes(&self) -> &[u8; 20] { &self.0 }
+    pub fn as_bytes(&self) -> &[u8; 20] {
+        &self.0
+    }
     pub fn from_bytes(b: &[u8]) -> Option<Self> {
-        if b.len() != 20 { return None; }
+        if b.len() != 20 {
+            return None;
+        }
         let mut hash = [0u8; 20];
         hash.copy_from_slice(b);
         Some(InfoHash(hash))
     }
     pub fn from_hex(s: &str) -> Option<Self> {
         let bytes = hex::decode(s).ok()?;
-        if bytes.len() != 20 { return None; }
+        if bytes.len() != 20 {
+            return None;
+        }
         let mut hash = [0u8; 20];
         hash.copy_from_slice(&bytes);
         Some(InfoHash(hash))
     }
-    pub fn to_hex(&self) -> String { hex::encode(self.0) }
+    pub fn to_hex(&self) -> String {
+        hex::encode(self.0)
+    }
 
     pub fn distance(&self, other: &InfoHash) -> InfoHash {
         let mut xor = [0u8; 20];
@@ -51,9 +59,9 @@ impl InfoHash {
 impl FromStr for InfoHash {
     type Err = crate::error::TorrentError;
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        Self::from_hex(s).ok_or_else(|| crate::error::TorrentError::MagnetParse(
-            format!("invalid info hash: {}", s)
-        ))
+        Self::from_hex(s).ok_or_else(|| {
+            crate::error::TorrentError::MagnetParse(format!("invalid info hash: {}", s))
+        })
     }
 }
 
@@ -120,8 +128,7 @@ impl fmt::Display for TorrentState {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[derive(Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub enum FilePriority {
     Skip,
     Low,
@@ -129,7 +136,6 @@ pub enum FilePriority {
     Normal,
     High,
 }
-
 
 impl fmt::Display for FilePriority {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -182,11 +188,12 @@ impl MagnetLink {
                             }
                         } else if hex_str.len() == 32
                             && let Some(bytes) = base32_decode(hex_str)
-                                && bytes.len() == 20 {
-                                    let mut hash = [0u8; 20];
-                                    hash.copy_from_slice(&bytes);
-                                    info_hash = Some(InfoHash(hash));
-                                }
+                            && bytes.len() == 20
+                        {
+                            let mut hash = [0u8; 20];
+                            hash.copy_from_slice(&bytes);
+                            info_hash = Some(InfoHash(hash));
+                        }
                     }
                 }
                 "dn" => display_name = Some(decoded),
@@ -361,9 +368,10 @@ impl ResumeData {
                 let path = entry.path();
                 if path.extension().map(|e| e == "json").unwrap_or(false)
                     && let Ok(json) = std::fs::read_to_string(&path)
-                        && let Ok(data) = serde_json::from_str::<ResumeData>(&json) {
-                            results.push(data);
-                        }
+                    && let Ok(data) = serde_json::from_str::<ResumeData>(&json)
+                {
+                    results.push(data);
+                }
             }
         }
         results

@@ -164,7 +164,8 @@ impl TorrentSession {
         self.total_uploaded.store(rd.uploaded, Ordering::Relaxed);
         if rd.file_priorities.len() == self.meta.read().files.len() {
             *self.file_priorities.lock() = rd.file_priorities.clone();
-            self.piece_manager.read()
+            self.piece_manager
+                .read()
                 .apply_file_priorities(&self.meta.read().files, &rd.file_priorities);
         }
     }
@@ -192,7 +193,8 @@ impl TorrentSession {
         let mut fp = self.file_priorities.lock();
         if file_index < fp.len() {
             fp[file_index] = priority;
-            self.piece_manager.read()
+            self.piece_manager
+                .read()
                 .apply_file_priorities(&self.meta.read().files, &fp);
         }
     }
@@ -317,7 +319,10 @@ impl TorrentSession {
             stats_session.stats_loop().await;
         });
 
-        if self.config.webseed_enabled && !self.meta.read().url_list.is_empty() && !self.meta.read().is_private {
+        if self.config.webseed_enabled
+            && !self.meta.read().url_list.is_empty()
+            && !self.meta.read().is_private
+        {
             let webseed_source = crate::webseed::WebseedSource {
                 meta: Arc::new(self.meta.read().clone()),
                 piece_manager: self.piece_manager.read().clone(),
@@ -617,7 +622,8 @@ impl TorrentSession {
 
             if !conn.peer_choking && pending_requests < max_pipeline {
                 if current_piece.is_none() {
-                    let in_endgame = self.config.endgame_mode && self.piece_manager.read().is_in_endgame();
+                    let in_endgame =
+                        self.config.endgame_mode && self.piece_manager.read().is_in_endgame();
                     let candidates = if in_endgame {
                         self.piece_manager.read().get_endgame_pieces()
                     } else {
@@ -625,7 +631,9 @@ impl TorrentSession {
                     };
 
                     for piece_idx in candidates.iter().take(10) {
-                        if let Some(collector) = self.piece_manager.read().try_start_piece(*piece_idx) {
+                        if let Some(collector) =
+                            self.piece_manager.read().try_start_piece(*piece_idx)
+                        {
                             blocks_in_piece = collector.lock().num_blocks;
                             total_sent = 0;
                             current_piece = Some(collector);
@@ -649,8 +657,10 @@ impl TorrentSession {
                     // candidates are taken: nobody requests the missing
                     // blocks because try_start_piece returns None.
                     if current_piece.is_none() {
-                        if let Some((idx, collector)) =
-                            self.piece_manager.read().pick_in_progress_for_peer(&conn.bitfield)
+                        if let Some((idx, collector)) = self
+                            .piece_manager
+                            .read()
+                            .pick_in_progress_for_peer(&conn.bitfield)
                         {
                             blocks_in_piece = collector.lock().num_blocks;
                             total_sent = 0;
@@ -801,9 +811,9 @@ impl TorrentSession {
                         conn.peer_metadata_id = Some(metadata_id);
                         if self.meta.read().num_pieces() == 0 {
                             // Don't ask if peer is in back-off from a prior reject.
-                            let in_backoff = conn.metadata_reject_until.map_or(false, |t| {
-                                t > std::time::Instant::now()
-                            });
+                            let in_backoff = conn
+                                .metadata_reject_until
+                                .map_or(false, |t| t > std::time::Instant::now());
                             if !in_backoff {
                                 // Pre-allocate metadata buffer from peer's advertised size.
                                 if let Some(size) = metadata_size {
@@ -850,9 +860,7 @@ impl TorrentSession {
                                 // Peer requests metadata from us.
                                 let tbytes = self.torrent_bytes.lock().clone();
                                 if let Some(ref tbytes) = tbytes {
-                                    if let Ok(info_raw) =
-                                        crate::bencode::extract_info_raw(tbytes)
-                                    {
+                                    if let Ok(info_raw) = crate::bencode::extract_info_raw(tbytes) {
                                         let chunks: Vec<&[u8]> =
                                             info_raw.chunks(BLOCK_SIZE as usize).collect();
                                         if piece < chunks.len() {
@@ -863,9 +871,8 @@ impl TorrentSession {
                                                 None
                                             };
                                             // Rate-limit responses to avoid send-buffer bloat.
-                                            let can_respond = conn
-                                                .metadata_last_response
-                                                .map_or(true, |t| {
+                                            let can_respond =
+                                                conn.metadata_last_response.map_or(true, |t| {
                                                     t.elapsed()
                                                         > std::time::Duration::from_millis(100)
                                                 });
@@ -881,9 +888,8 @@ impl TorrentSession {
                                                 conn.metadata_last_response =
                                                     Some(std::time::Instant::now());
                                             } else {
-                                                let reject = PeerMessage::build_metadata_reject(
-                                                    piece,
-                                                );
+                                                let reject =
+                                                    PeerMessage::build_metadata_reject(piece);
                                                 conn.send_message(&PeerMessage::Extended {
                                                     id,
                                                     payload: reject,
@@ -891,8 +897,7 @@ impl TorrentSession {
                                                 .await?;
                                             }
                                         } else {
-                                            let reject =
-                                                PeerMessage::build_metadata_reject(piece);
+                                            let reject = PeerMessage::build_metadata_reject(piece);
                                             conn.send_message(&PeerMessage::Extended {
                                                 id,
                                                 payload: reject,
@@ -909,13 +914,11 @@ impl TorrentSession {
                                     .await?;
                                 }
                             }
-                             1 => {
+                            1 => {
                                 // Data message: store metadata piece.
                                 // Dedup guard: only accept data for pieces we requested.
-                                let idx = conn
-                                    .metadata_sent_requests
-                                    .iter()
-                                    .position(|p| *p == piece);
+                                let idx =
+                                    conn.metadata_sent_requests.iter().position(|p| *p == piece);
                                 if idx.is_none() {
                                     tracing::debug!(
                                         "Ignoring unsolicited metadata piece {} from {}",
@@ -946,7 +949,9 @@ impl TorrentSession {
                                                             "Metadata hash mismatch for {}",
                                                             self.info_hash
                                                         );
-                                                        *md_guard = Some(MetadataState::new(self.info_hash));
+                                                        *md_guard = Some(MetadataState::new(
+                                                            self.info_hash,
+                                                        ));
                                                         (None, None)
                                                     }
                                                 } else {
@@ -967,21 +972,15 @@ impl TorrentSession {
                                 };
 
                                 if let Some(assembled) = maybe_assembled {
-                                    if let Err(e) = self
-                                        .finalize_metadata(assembled)
-                                        .await
-                                    {
-                                        tracing::warn!(
-                                            "Failed to finalize metadata: {}",
-                                            e
-                                        );
+                                    if let Err(e) = self.finalize_metadata(assembled).await {
+                                        tracing::warn!("Failed to finalize metadata: {}", e);
                                     }
                                     break;
                                 }
                                 if let Some((next, ext_id)) = need_next {
-                                    let in_backoff = conn.metadata_reject_until.map_or(false, |t| {
-                                        t > std::time::Instant::now()
-                                    });
+                                    let in_backoff = conn
+                                        .metadata_reject_until
+                                        .map_or(false, |t| t > std::time::Instant::now());
                                     if !in_backoff {
                                         let req = PeerMessage::build_metadata_request(next);
                                         conn.send_message(&PeerMessage::Extended {
@@ -993,11 +992,12 @@ impl TorrentSession {
                                     }
                                 }
                             }
-                             2 => {
+                            2 => {
                                 // Reject: peer doesn't have this piece.
                                 conn.metadata_sent_requests.retain(|p| *p != piece);
-                                conn.metadata_reject_until =
-                                    Some(std::time::Instant::now() + std::time::Duration::from_secs(60));
+                                conn.metadata_reject_until = Some(
+                                    std::time::Instant::now() + std::time::Duration::from_secs(60),
+                                );
                                 tracing::debug!(
                                     "Peer {} rejected metadata piece {}",
                                     conn.addr,
@@ -1258,7 +1258,8 @@ impl TorrentSession {
             last_uploaded = uploaded;
 
             let progress = self.piece_manager.read().progress();
-            let remaining = (self.meta.read().total_size as f64 * (1.0f64 - progress as f64)) as u64;
+            let remaining =
+                (self.meta.read().total_size as f64 * (1.0f64 - progress as f64)) as u64;
             let eta = if dl_rate > 0 {
                 Some(remaining / dl_rate)
             } else {

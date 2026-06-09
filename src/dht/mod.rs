@@ -8,8 +8,8 @@ mod routing_table;
 
 pub use error::{Error, Result};
 pub use node::{DhtBuilder, DhtNode, DhtStats};
-pub use routing_table::{RoutingTable, RoutingTableNode, LeafBucket, InsertResult, NodeStatus};
 pub use protocol::Message;
+pub use routing_table::{InsertResult, LeafBucket, NodeStatus, RoutingTable, RoutingTableNode};
 
 use std::time::Duration;
 

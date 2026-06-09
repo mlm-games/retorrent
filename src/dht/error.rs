@@ -36,7 +36,10 @@ pub enum Error {
     RequestNotFound,
 
     #[error("error looking up {hostname}: {err}")]
-    BootstrapLookup { hostname: String, err: std::io::Error },
+    BootstrapLookup {
+        hostname: String,
+        err: std::io::Error,
+    },
 
     #[error("error sending: {0}")]
     Send(std::io::Error),

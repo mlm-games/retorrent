@@ -117,7 +117,10 @@ impl PeerMessage {
         );
         top.insert("reqq".to_string(), BencodeValue::Integer(reqq as i64));
         if let Some(size) = metadata_size {
-            top.insert("metadata_size".to_string(), BencodeValue::Integer(size as i64));
+            top.insert(
+                "metadata_size".to_string(),
+                BencodeValue::Integer(size as i64),
+            );
         }
         BencodeParser::encode(&BencodeValue::Dict(top))
     }
@@ -451,10 +454,7 @@ impl PeerMessage {
             .get("msg_type")
             .and_then(|v| v.as_integer())
             .unwrap_or(0xFF) as u8;
-        let piece = dict
-            .get("piece")
-            .and_then(|v| v.as_integer())
-            .unwrap_or(0) as usize;
+        let piece = dict.get("piece").and_then(|v| v.as_integer()).unwrap_or(0) as usize;
         let total_size = dict
             .get("total_size")
             .and_then(|v| v.as_integer())
@@ -491,8 +491,7 @@ fn find_dict_end(data: &[u8]) -> Option<usize> {
                 while i < data.len() && data[i] != b':' {
                     i += 1;
                 }
-                let len: usize =
-                    std::str::from_utf8(&data[start..i]).ok()?.parse().ok()?;
+                let len: usize = std::str::from_utf8(&data[start..i]).ok()?.parse().ok()?;
                 i += 1 + len; // skip ':' and the string content
                 continue;
             }
@@ -736,7 +735,11 @@ mod tests {
         let payload = PeerMessage::build_extended_handshake_payload(64, None);
         let (pex_id, metadata_id, metadata_size) = PeerMessage::parse_extended_handshake(&payload);
         assert_eq!(pex_id, Some(1), "we should advertise ut_pex at id 1");
-        assert_eq!(metadata_id, Some(2), "we should advertise ut_metadata at id 2");
+        assert_eq!(
+            metadata_id,
+            Some(2),
+            "we should advertise ut_metadata at id 2"
+        );
         assert_eq!(metadata_size, None);
     }
 

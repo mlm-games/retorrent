@@ -112,9 +112,10 @@ impl TrackerClient {
         let decoded = BencodeParser::parse(&body)?;
 
         if let Some(failure) = decoded.dict_get("failure reason")
-            && let Some(msg) = failure.as_string() {
-                return Err(TorrentError::Tracker(msg.to_string()));
-            }
+            && let Some(msg) = failure.as_string()
+        {
+            return Err(TorrentError::Tracker(msg.to_string()));
+        }
 
         let interval = decoded
             .dict_get("interval")

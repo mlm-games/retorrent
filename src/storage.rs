@@ -29,8 +29,8 @@ impl DiskStorage {
     ) -> Result<Self> {
         let priorities_guard = file_priorities.lock();
         for (idx, file_info) in meta.files.iter().enumerate() {
-            let is_skipped = idx < priorities_guard.len()
-                && priorities_guard[idx] == FilePriority::Skip;
+            let is_skipped =
+                idx < priorities_guard.len() && priorities_guard[idx] == FilePriority::Skip;
             if is_skipped {
                 // Create parent dirs so sibling files still work, but skip the file itself.
                 let full_path = base_path.join(&file_info.path);
@@ -244,10 +244,11 @@ impl DiskStorage {
         for file_info in &self.meta.files {
             if let Some(parent) = self.base_path.join(&file_info.path).parent()
                 && parent != canonical_base
-                    && let Ok(canonical_parent) = parent.canonicalize()
-                        && canonical_parent.starts_with(&canonical_base) {
-                            dirs.insert(canonical_parent);
-                        }
+                && let Ok(canonical_parent) = parent.canonicalize()
+                && canonical_parent.starts_with(&canonical_base)
+            {
+                dirs.insert(canonical_parent);
+            }
         }
         let mut sorted: Vec<PathBuf> = dirs.into_iter().collect();
         sorted.sort_by(|a, b| b.components().count().cmp(&a.components().count()));
