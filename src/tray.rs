@@ -113,50 +113,11 @@ fn build_menu() -> Menu {
 }
 
 fn create_icon() -> Icon {
-    let size = 32u32;
-    let mut rgba = Vec::with_capacity((size * size * 4) as usize);
-
-    for y in 0..size {
-        for x in 0..size {
-            let cx = (size / 2) as i32;
-            let cy = (size / 2) as i32;
-            let r = cx - 1;
-
-            let dx = (x as i32) - cx;
-            let dy = (y as i32) - cy;
-
-            let in_circle = dx * dx + dy * dy <= r * r;
-
-            if in_circle {
-                let dist = ((dx as f32).powi(2) + (dy as f32).powi(2)).sqrt() / (r as f32);
-
-                let red = (200.0 * (1.0 - dist * 0.3)) as u8;
-                let green = (120.0 + 80.0 * (1.0 - dist)) as u8;
-                let blue = (40.0 + 60.0 * (1.0 - dist)) as u8;
-
-                let t_thickness = 4i32;
-                let t_x = cx - 6;
-                let t_y = cy - 6;
-                let t_w = 12i32;
-                let t_h = 12i32;
-
-                let hbar = (x as i32) >= t_x && (x as i32) < t_x + t_w && (y as i32) == t_y;
-
-                let vbar = (x as i32) >= (t_x + t_w / 2 - t_thickness / 2)
-                    && (x as i32) < (t_x + t_w / 2 + t_thickness / 2)
-                    && (y as i32) >= t_y
-                    && (y as i32) < t_y + t_h;
-
-                if hbar || vbar {
-                    rgba.extend_from_slice(&[255, 255, 255, 255]);
-                } else {
-                    rgba.extend_from_slice(&[red, green, blue, 255]);
-                }
-            } else {
-                rgba.extend_from_slice(&[0, 0, 0, 0]);
-            }
-        }
-    }
-
-    Icon::from_rgba(rgba, size, size).unwrap()
+    let img_bytes = include_bytes!("../others/packaging/icon.png");
+    let img = image::load_from_memory(img_bytes)
+        .expect("Failed to load tray icon")
+        .resize_exact(64, 64, image::imageops::FilterType::Lanczos3)
+        .to_rgba8();
+    let (width, height) = img.dimensions();
+    Icon::from_rgba(img.into_raw(), width, height).unwrap()
 }

@@ -153,6 +153,7 @@ open = "5"
 [target.'cfg(any(target_os = "linux", target_os = "windows", target_os = "macos"))'.dependencies]
 gtk = "0.18"
 tray-icon = "0.24"
+image = { version = "0.25", default-features = false, features = ["png"] }
 
 
 [patch.crates-io]
