@@ -52,7 +52,7 @@ jobs:
           arch=('x86_64' 'aarch64')
           url="https://github.com/mlm-games/retorrent"
           license=('GPL3')
-          depends=('gtk3' 'libappindicator-gtk3' 'libudev' 'glibc')
+          depends=('gtk3' 'libappindicator-gtk3' 'glibc')
           optdepends=()
           provides=('retorrent')
           conflicts=('retorrent')
