@@ -27,6 +27,7 @@ pub struct Config {
     pub seed_ratio_enabled: bool,
     pub auto_resume: bool,
     pub pipeline_depth: u32,
+    pub minimize_to_tray: bool,
 }
 
 impl Default for Config {
@@ -57,6 +58,7 @@ impl Default for Config {
             seed_ratio_enabled: false,
             auto_resume: true,
             pipeline_depth: 32,
+            minimize_to_tray: false,
         }
     }
 }

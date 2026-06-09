@@ -543,7 +543,8 @@ fn top_bar_view(
                                 match std::fs::read(&path) {
                                     Ok(data) => match MetaInfo::from_bytes(&data) {
                                         Ok(meta) => {
-                                            let suggested_dir = engine.config.read().unwrap().download_dir.clone();
+                                            let suggested_dir =
+                                                engine.config.read().unwrap().download_dir.clone();
                                             if let Ok(mut p) = pending_from_button.lock() {
                                                 p.push(PendingTorrent {
                                                     name: meta.name,
@@ -1715,8 +1716,9 @@ fn settings_dialog_view(
     engine: Arc<TorrentEngine>,
 ) -> View {
     let th = theme();
-    let config: Rc<Signal<Config>> =
-        remember_with_key(state.key("cfg"), || signal(engine.config.read().unwrap().clone()));
+    let config: Rc<Signal<Config>> = remember_with_key(state.key("cfg"), || {
+        signal(engine.config.read().unwrap().clone())
+    });
     let last_visible = remember_with_key(state.key("lv"), || signal(false));
 
     let listen_port_input: Rc<Signal<String>> =
@@ -1781,7 +1783,10 @@ fn settings_dialog_view(
                     let mut views: Vec<View> = Vec::new();
 
                     let field_row = |label: &str, input: &Rc<Signal<String>>| {
-                        Row(Modifier::new().fill_max_width().align_items(AlignItems::Center)).child((
+                        Row(Modifier::new()
+                            .fill_max_width()
+                            .align_items(AlignItems::Center))
+                        .child((
                             Text(label)
                                 .size(12.0)
                                 .color(th.on_surface_variant)
@@ -1919,6 +1924,14 @@ fn settings_dialog_view(
                             c.set(nc);
                         })
                     }));
+                    views.push(switch_row("Minimize on launch", cfg.minimize_to_tray, {
+                        let c = config.clone();
+                        Rc::new(move |v| {
+                            let mut nc = c.get();
+                            nc.minimize_to_tray = v;
+                            c.set(nc);
+                        })
+                    }));
 
                     // Seeding
                     views.push(Box(Modifier::new().height(12.0)));
@@ -1952,42 +1965,42 @@ fn settings_dialog_view(
                 .align_items(AlignItems::Center)
                 .justify_content(JustifyContent::End))
             .child((
-                    TextButton(
-                        Modifier::new(),
-                        {
-                            let s = state.clone();
-                            let c = config.clone();
-                            let e = engine.clone();
-                            let lp = listen_port_input.clone();
-                            let mc = max_conn_input.clone();
-                            let mpt = max_pt_input.clone();
-                            let pd = pipeline_input.clone();
-                            let us = upload_slots_input.clone();
-                            let mdl = max_dl_input.clone();
-                            let mul = max_ul_input.clone();
-                            let cache = cache_input.clone();
-                            let choke = choke_input.clone();
-                            let unchoke = unchoke_input.clone();
-                            let sr = seed_ratio_input.clone();
-                            move || {
-                                let engine_cfg = e.config.read().unwrap().clone();
-                                c.set(engine_cfg.clone());
-                                lp.set(engine_cfg.listen_port.to_string());
-                                mc.set(engine_cfg.max_connections.to_string());
-                                mpt.set(engine_cfg.max_connections_per_torrent.to_string());
-                                pd.set(engine_cfg.pipeline_depth.to_string());
-                                us.set(engine_cfg.upload_slots.to_string());
-                                mdl.set(engine_cfg.max_download_rate.to_string());
-                                mul.set(engine_cfg.max_upload_rate.to_string());
-                                cache.set(engine_cfg.cache_size_mb.to_string());
-                                choke.set(engine_cfg.choke_interval.to_string());
-                                unchoke.set(engine_cfg.optimistic_unchoke_interval.to_string());
-                                sr.set(engine_cfg.seed_ratio_limit.to_string());
-                                s.dismiss();
-                            }
-                        },
-                        || Text("Cancel"),
-                    ),
+                TextButton(
+                    Modifier::new(),
+                    {
+                        let s = state.clone();
+                        let c = config.clone();
+                        let e = engine.clone();
+                        let lp = listen_port_input.clone();
+                        let mc = max_conn_input.clone();
+                        let mpt = max_pt_input.clone();
+                        let pd = pipeline_input.clone();
+                        let us = upload_slots_input.clone();
+                        let mdl = max_dl_input.clone();
+                        let mul = max_ul_input.clone();
+                        let cache = cache_input.clone();
+                        let choke = choke_input.clone();
+                        let unchoke = unchoke_input.clone();
+                        let sr = seed_ratio_input.clone();
+                        move || {
+                            let engine_cfg = e.config.read().unwrap().clone();
+                            c.set(engine_cfg.clone());
+                            lp.set(engine_cfg.listen_port.to_string());
+                            mc.set(engine_cfg.max_connections.to_string());
+                            mpt.set(engine_cfg.max_connections_per_torrent.to_string());
+                            pd.set(engine_cfg.pipeline_depth.to_string());
+                            us.set(engine_cfg.upload_slots.to_string());
+                            mdl.set(engine_cfg.max_download_rate.to_string());
+                            mul.set(engine_cfg.max_upload_rate.to_string());
+                            cache.set(engine_cfg.cache_size_mb.to_string());
+                            choke.set(engine_cfg.choke_interval.to_string());
+                            unchoke.set(engine_cfg.optimistic_unchoke_interval.to_string());
+                            sr.set(engine_cfg.seed_ratio_limit.to_string());
+                            s.dismiss();
+                        }
+                    },
+                    || Text("Cancel"),
+                ),
                 Box(Modifier::new().width(8.0)),
                 FilledButton(
                     Modifier::new(),

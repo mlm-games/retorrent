@@ -151,6 +151,7 @@ pub fn run_desktop_main() -> Result<()> {
             .build()?,
     );
 
+    let minimize_to_tray = config.minimize_to_tray;
     let engine = rt.block_on(async { Arc::new(TorrentEngine::new(config).await) });
 
     let engine_for_shutdown = engine.clone();
@@ -193,10 +194,16 @@ pub fn run_desktop_main() -> Result<()> {
     repose_platform::set_close_to_tray(true);
 
     // hide/show toggles work even when the window is hidden
+    let hide_on_start = minimize_to_tray;
     {
         let rx = tray_cmd_rx.clone();
         let eng = engine.clone();
         repose_platform::set_about_to_wait_callback(Box::new(move || {
+            use std::sync::atomic::{AtomicBool, Ordering};
+            static FIRST_FRAME: AtomicBool = AtomicBool::new(true);
+            if hide_on_start && FIRST_FRAME.swap(false, Ordering::Relaxed) {
+                repose_platform::hide_app_window();
+            }
             if let Ok(guard) = rx.lock() {
                 while let Ok(cmd) = guard.try_recv() {
                     match cmd {
