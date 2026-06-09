@@ -1,6 +1,6 @@
 [package]
 name = "retorrent"
-version = "0.1.3"
+version = "0.2.0"
 edition = "2024"
 resolver = "3"
 
@@ -104,12 +104,12 @@ reqwest = { version = "0.13.4", features = [
 ], default-features = false }
 tokio-util = { version = "0.7", features = ["codec"] }
 
-repose-core = { version = "0.17.4" }
-repose-ui = { version = "0.17.4" }
-repose-material = { version = "0.17.4" }
-repose-text = { version = "0.17.4" }
-repose-devtools = { version = "0.17.4" }
-repose-platform = { version = "0.17.4" }
+repose-core = { version = "0.17.6" }
+repose-ui = { version = "0.17.6" }
+repose-material = { version = "0.17.6" }
+repose-text = { version = "0.17.6" }
+repose-devtools = { version = "0.17.6" }
+repose-platform = { version = "0.17.6" }
 
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
@@ -157,16 +157,16 @@ tray-icon = "0.24"
 
 [patch.crates-io]
 winit = { git = "https://github.com/mlm-games/winit", branch = "0.30.x-cpick" }
-repose-core = { git = "https://github.com/mlm-games/repose", package = "repose-core" }
-repose-ui = { git = "https://github.com/mlm-games/repose", package = "repose-ui" }
-repose-material = { git = "https://github.com/mlm-games/repose", package = "repose-material" }
-repose-text = { git = "https://github.com/mlm-games/repose", package = "repose-text" }
-repose-devtools = { git = "https://github.com/mlm-games/repose", package = "repose-devtools" }
-repose-platform = { git = "https://github.com/mlm-games/repose", package = "repose-platform" }
-repose-macros = { git = "https://github.com/mlm-games/repose", package = "repose-macros" }
-repose-tree = { git = "https://github.com/mlm-games/repose", package = "repose-tree" }
-repose-render-wgpu = { git = "https://github.com/mlm-games/repose", package = "repose-render-wgpu" }
-repose-navigation = { git = "https://github.com/mlm-games/repose", package = "repose-navigation" }
+# repose-core = { git = "https://github.com/mlm-games/repose", package = "repose-core" }
+# repose-ui = { git = "https://github.com/mlm-games/repose", package = "repose-ui" }
+# repose-material = { git = "https://github.com/mlm-games/repose", package = "repose-material" }
+# repose-text = { git = "https://github.com/mlm-games/repose", package = "repose-text" }
+# repose-devtools = { git = "https://github.com/mlm-games/repose", package = "repose-devtools" }
+# repose-platform = { git = "https://github.com/mlm-games/repose", package = "repose-platform" }
+# repose-macros = { git = "https://github.com/mlm-games/repose", package = "repose-macros" }
+# repose-tree = { git = "https://github.com/mlm-games/repose", package = "repose-tree" }
+# repose-render-wgpu = { git = "https://github.com/mlm-games/repose", package = "repose-render-wgpu" }
+# repose-navigation = { git = "https://github.com/mlm-games/repose", package = "repose-navigation" }
 
 [target.'cfg(target_os = "android")'.dependencies]
 android_logger = "0.15"
