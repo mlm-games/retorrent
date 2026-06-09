@@ -98,18 +98,18 @@ jobs:
           echo "version_code=$VERSION_CODE"    >> "$GITHUB_OUTPUT"
           echo "Bumped version: $OLD_VERSION -> $NEW_VERSION; version_code=$VERSION_CODE"
 
-      - name: Generate Release Notes
-        id: notes
-        uses: mlm-games/release-notes-generator@main
-        with:
-          version: ${{ steps.bump.outputs.version_name }}
-          changelog-path: "CHANGELOG.md"
-          version-file-path: "./fastlane/metadata/android/en-US/changelogs/${{ steps.bump.outputs.version_code }}.txt"
-          version-code: "${{ steps.bump.outputs.version_code }}"
-          metainfo-path: "./others/flathub/io.github.mlm_games.retorrent.metainfo.xml"
-          format: "- {{subject}}"
-          exclude-patterns: "chore:,ci:,docs:,build:,Bump version,Merge pull request,[skip ci]"
-          auto-commit: "false"
+      # - name: Generate Release Notes
+      #   id: notes
+      #   uses: mlm-games/release-notes-generator@main
+      #   with:
+      #     version: ${{ steps.bump.outputs.version_name }}
+      #     changelog-path: "CHANGELOG.md"
+      #     version-file-path: "./fastlane/metadata/android/en-US/changelogs/${{ steps.bump.outputs.version_code }}.txt"
+      #     version-code: "${{ steps.bump.outputs.version_code }}"
+      #     metainfo-path: "./others/flathub/io.github.mlm_games.retorrent.metainfo.xml"
+      #     format: "- {{subject}}"
+      #     exclude-patterns: "chore:,ci:,docs:,build:,Bump version,Merge pull request,[skip ci]"
+      #     auto-commit: "false"
 
       - name: Update Cargo.lock
         shell: bash
@@ -433,7 +433,7 @@ jobs:
           generate_release_notes: true
           target_commitish: ${{ needs.prepare-version.outputs.commit_sha }}
           prerelease: ${{ inputs.mark_prerelease }}
-          body: ${{ needs.prepare-version.outputs.release_notes }}
+          # body: ${{ needs.prepare-version.outputs.release_notes }}
           files: |
             dist/**/*.tar.gz
             dist/**/*.zip
