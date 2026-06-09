@@ -1733,6 +1733,14 @@ fn settings_dialog_view(
         remember_with_key(state.key("si_mdl"), || signal(String::new()));
     let max_ul_input: Rc<Signal<String>> =
         remember_with_key(state.key("si_mul"), || signal(String::new()));
+    let cache_input: Rc<Signal<String>> =
+        remember_with_key(state.key("si_cache"), || signal(String::new()));
+    let choke_input: Rc<Signal<String>> =
+        remember_with_key(state.key("si_choke"), || signal(String::new()));
+    let unchoke_input: Rc<Signal<String>> =
+        remember_with_key(state.key("si_unchoke"), || signal(String::new()));
+    let seed_ratio_input: Rc<Signal<String>> =
+        remember_with_key(state.key("si_sr"), || signal(String::new()));
 
     let vis = state.is_visible();
     if vis && !last_visible.get() {
@@ -1745,6 +1753,10 @@ fn settings_dialog_view(
         upload_slots_input.set(engine_cfg.upload_slots.to_string());
         max_dl_input.set(engine_cfg.max_download_rate.to_string());
         max_ul_input.set(engine_cfg.max_upload_rate.to_string());
+        cache_input.set(engine_cfg.cache_size_mb.to_string());
+        choke_input.set(engine_cfg.choke_interval.to_string());
+        unchoke_input.set(engine_cfg.optimistic_unchoke_interval.to_string());
+        seed_ratio_input.set(engine_cfg.seed_ratio_limit.to_string());
         last_visible.set(true);
     } else if !vis {
         last_visible.set(false);
@@ -1768,9 +1780,6 @@ fn settings_dialog_view(
                 Column(Modifier::new().fill_max_width()).child({
                     let mut views: Vec<View> = Vec::new();
 
-                    // Network section
-                    views.push(Text("Network").size(16.0).color(th.on_surface));
-                    views.push(Box(Modifier::new().height(8.0)));
                     let field_row = |label: &str, input: &Rc<Signal<String>>| {
                         Row(Modifier::new().fill_max_width().align_items(AlignItems::Center)).child((
                             Text(label)
@@ -1789,6 +1798,22 @@ fn settings_dialog_view(
                             ),
                         ))
                     };
+                    let switch_row = |label: &str, val: bool, on_toggle: Rc<dyn Fn(bool)>| {
+                        Row(Modifier::new()
+                            .fill_max_width()
+                            .align_items(AlignItems::Center))
+                        .child((
+                            Text(label)
+                                .size(12.0)
+                                .color(th.on_surface_variant)
+                                .modifier(Modifier::new().flex_grow(1.0)),
+                            Switch(val, move |v| on_toggle(v)),
+                        ))
+                    };
+
+                    // Network
+                    views.push(Text("Network").size(16.0).color(th.on_surface));
+                    views.push(Box(Modifier::new().height(8.0)));
                     views.push(Box(Modifier::new().height(4.0)));
                     views.push(field_row("Listen Port:", &listen_port_input));
                     views.push(Box(Modifier::new().height(4.0)));
@@ -1800,13 +1825,27 @@ fn settings_dialog_view(
                     views.push(Box(Modifier::new().height(4.0)));
                     views.push(field_row("Upload Slots:", &upload_slots_input));
                     views.push(Box(Modifier::new().height(4.0)));
+                    views.push(switch_row("Accept Incoming", cfg.accept_incoming, {
+                        let c = config.clone();
+                        Rc::new(move |v| {
+                            let mut nc = c.get();
+                            nc.accept_incoming = v;
+                            c.set(nc);
+                        })
+                    }));
+
+                    // Bandwidth
+                    views.push(Box(Modifier::new().height(12.0)));
+                    views.push(Text("Bandwidth").size(16.0).color(th.on_surface));
+                    views.push(Box(Modifier::new().height(8.0)));
+                    views.push(Box(Modifier::new().height(4.0)));
                     views.push(field_row("Max DL Rate (0=\u{221E}):", &max_dl_input));
                     views.push(Box(Modifier::new().height(4.0)));
                     views.push(field_row("Max UL Rate (0=\u{221E}):", &max_ul_input));
 
-                    // Downloads
+                    // Storage
                     views.push(Box(Modifier::new().height(12.0)));
-                    views.push(Text("Downloads").size(16.0).color(th.on_surface));
+                    views.push(Text("Storage").size(16.0).color(th.on_surface));
                     views.push(Box(Modifier::new().height(8.0)));
                     views.push(
                         Row(Modifier::new().fill_max_width()).child((
@@ -1816,60 +1855,94 @@ fn settings_dialog_view(
                                 .color(th.on_surface),
                         )),
                     );
+                    views.push(Box(Modifier::new().height(4.0)));
+                    views.push(field_row("Cache Size (MB):", &cache_input));
+                    views.push(Box(Modifier::new().height(4.0)));
+                    views.push(switch_row("Preallocate Files", cfg.prealloc_files, {
+                        let c = config.clone();
+                        Rc::new(move |v| {
+                            let mut nc = c.get();
+                            nc.prealloc_files = v;
+                            c.set(nc);
+                        })
+                    }));
 
                     // Features
                     views.push(Box(Modifier::new().height(12.0)));
                     views.push(Text("Features").size(16.0).color(th.on_surface));
                     views.push(Box(Modifier::new().height(8.0)));
+                    views.push(switch_row("DHT", cfg.dht_enabled, {
+                        let c = config.clone();
+                        Rc::new(move |v| {
+                            let mut nc = c.get();
+                            nc.dht_enabled = v;
+                            c.set(nc);
+                        })
+                    }));
+                    views.push(switch_row("UPnP", cfg.upnp_enabled, {
+                        let c = config.clone();
+                        Rc::new(move |v| {
+                            let mut nc = c.get();
+                            nc.upnp_enabled = v;
+                            c.set(nc);
+                        })
+                    }));
+                    views.push(switch_row("PEX", cfg.pex_enabled, {
+                        let c = config.clone();
+                        Rc::new(move |v| {
+                            let mut nc = c.get();
+                            nc.pex_enabled = v;
+                            c.set(nc);
+                        })
+                    }));
+                    views.push(switch_row("Webseed", cfg.webseed_enabled, {
+                        let c = config.clone();
+                        Rc::new(move |v| {
+                            let mut nc = c.get();
+                            nc.webseed_enabled = v;
+                            c.set(nc);
+                        })
+                    }));
+                    views.push(switch_row("Endgame Mode", cfg.endgame_mode, {
+                        let c = config.clone();
+                        Rc::new(move |v| {
+                            let mut nc = c.get();
+                            nc.endgame_mode = v;
+                            c.set(nc);
+                        })
+                    }));
+                    views.push(switch_row("Auto Resume", cfg.auto_resume, {
+                        let c = config.clone();
+                        Rc::new(move |v| {
+                            let mut nc = c.get();
+                            nc.auto_resume = v;
+                            c.set(nc);
+                        })
+                    }));
 
-                    let feature_switches: Vec<(&str, bool, Rc<dyn Fn(bool)>)> = vec![
-                        ("DHT", cfg.dht_enabled, {
-                            let c = config.clone();
-                            Rc::new(move |v| {
-                                let mut nc = c.get();
-                                nc.dht_enabled = v;
-                                c.set(nc);
-                            })
-                        }),
-                        ("UPnP", cfg.upnp_enabled, {
-                            let c = config.clone();
-                            Rc::new(move |v| {
-                                let mut nc = c.get();
-                                nc.upnp_enabled = v;
-                                c.set(nc);
-                            })
-                        }),
-                        ("PEX", cfg.pex_enabled, {
-                            let c = config.clone();
-                            Rc::new(move |v| {
-                                let mut nc = c.get();
-                                nc.pex_enabled = v;
-                                c.set(nc);
-                            })
-                        }),
-                        ("Auto Resume", cfg.auto_resume, {
-                            let c = config.clone();
-                            Rc::new(move |v| {
-                                let mut nc = c.get();
-                                nc.auto_resume = v;
-                                c.set(nc);
-                            })
-                        }),
-                    ];
-                    for (label, val, on_toggle) in feature_switches {
-                        views.push(
-                            Row(Modifier::new()
-                                .fill_max_width()
-                                .align_items(AlignItems::Center))
-                            .child((
-                                Text(label)
-                                    .size(12.0)
-                                    .color(th.on_surface_variant)
-                                    .modifier(Modifier::new().flex_grow(1.0)),
-                                Switch(val, move |v| (on_toggle)(v)),
-                            )),
-                        );
-                    }
+                    // Seeding
+                    views.push(Box(Modifier::new().height(12.0)));
+                    views.push(Text("Seeding").size(16.0).color(th.on_surface));
+                    views.push(Box(Modifier::new().height(8.0)));
+                    views.push(switch_row("Seed Ratio Limit", cfg.seed_ratio_enabled, {
+                        let c = config.clone();
+                        Rc::new(move |v| {
+                            let mut nc = c.get();
+                            nc.seed_ratio_enabled = v;
+                            c.set(nc);
+                        })
+                    }));
+                    views.push(Box(Modifier::new().height(4.0)));
+                    views.push(field_row("Ratio:", &seed_ratio_input));
+
+                    // Advanced
+                    views.push(Box(Modifier::new().height(12.0)));
+                    views.push(Text("Advanced").size(16.0).color(th.on_surface));
+                    views.push(Box(Modifier::new().height(8.0)));
+                    views.push(Box(Modifier::new().height(4.0)));
+                    views.push(field_row("Choke Interval (s):", &choke_input));
+                    views.push(Box(Modifier::new().height(4.0)));
+                    views.push(field_row("Opt. Unchoke Interval (s):", &unchoke_input));
 
                     views
                 }),
@@ -1892,6 +1965,10 @@ fn settings_dialog_view(
                             let us = upload_slots_input.clone();
                             let mdl = max_dl_input.clone();
                             let mul = max_ul_input.clone();
+                            let cache = cache_input.clone();
+                            let choke = choke_input.clone();
+                            let unchoke = unchoke_input.clone();
+                            let sr = seed_ratio_input.clone();
                             move || {
                                 let engine_cfg = e.config.read().unwrap().clone();
                                 c.set(engine_cfg.clone());
@@ -1902,6 +1979,10 @@ fn settings_dialog_view(
                                 us.set(engine_cfg.upload_slots.to_string());
                                 mdl.set(engine_cfg.max_download_rate.to_string());
                                 mul.set(engine_cfg.max_upload_rate.to_string());
+                                cache.set(engine_cfg.cache_size_mb.to_string());
+                                choke.set(engine_cfg.choke_interval.to_string());
+                                unchoke.set(engine_cfg.optimistic_unchoke_interval.to_string());
+                                sr.set(engine_cfg.seed_ratio_limit.to_string());
                                 s.dismiss();
                             }
                         },
@@ -1921,6 +2002,10 @@ fn settings_dialog_view(
                         let us = upload_slots_input.clone();
                         let mdl = max_dl_input.clone();
                         let mul = max_ul_input.clone();
+                        let cache = cache_input.clone();
+                        let choke = choke_input.clone();
+                        let unchoke = unchoke_input.clone();
+                        let sr = seed_ratio_input.clone();
                         move || {
                             let mut cfg = c.get();
                             if let Ok(v) = lp.get().parse::<u16>() {
@@ -1943,6 +2028,18 @@ fn settings_dialog_view(
                             }
                             if let Ok(v) = mul.get().parse::<u64>() {
                                 cfg.max_upload_rate = v;
+                            }
+                            if let Ok(v) = cache.get().parse::<usize>() {
+                                cfg.cache_size_mb = v;
+                            }
+                            if let Ok(v) = choke.get().parse::<u64>() {
+                                cfg.choke_interval = v;
+                            }
+                            if let Ok(v) = unchoke.get().parse::<u64>() {
+                                cfg.optimistic_unchoke_interval = v;
+                            }
+                            if let Ok(v) = sr.get().parse::<f64>() {
+                                cfg.seed_ratio_limit = v;
                             }
                             let _ = cfg.save();
                             e.apply_config(&cfg);
