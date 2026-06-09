@@ -117,18 +117,18 @@ jobs:
             exit 1
           fi
 
-      - name: Generate Release Notes
-        id: notes
-        uses: mlm-games/release-notes-generator@main
-        with:
-          version: ${{ steps.meta.outputs.version_name }}
-          changelog-path: "CHANGELOG.md"
-          version-file-path: "./fastlane/metadata/android/en-US/changelogs/${{ steps.meta.outputs.version_code }}.txt"
-          version-code: "${{ steps.meta.outputs.version_code }}"
-          metainfo-path: "./others/flathub/io.github.mlm_games.retorrent.metainfo.xml"
-          format: "- {{subject}}"
-          exclude-patterns: "chore:,ci:,docs:,build:,Bump version,Merge pull request,[skip ci]"
-          auto-commit: "false"
+      # - name: Generate Release Notes
+      #   id: notes
+      #   uses: mlm-games/release-notes-generator@main
+      #   with:
+      #     version: ${{ steps.meta.outputs.version_name }}
+      #     changelog-path: "CHANGELOG.md"
+      #     version-file-path: "./fastlane/metadata/android/en-US/changelogs/${{ steps.meta.outputs.version_code }}.txt"
+      #     version-code: "${{ steps.meta.outputs.version_code }}"
+      #     metainfo-path: "./others/flathub/io.github.mlm_games.retorrent.metainfo.xml"
+      #     format: "- {{subject}}"
+      #     exclude-patterns: "chore:,ci:,docs:,build:,Bump version,Merge pull request,[skip ci]"
+      #     auto-commit: "false"
 
   build:
     name: Build and package (desktop)
