@@ -172,6 +172,20 @@ impl TorrentSession {
         }
         self.paused
             .store(rd.prev_state == PrevState::Paused, Ordering::Relaxed);
+
+        let state = if rd.prev_state == PrevState::Paused {
+            TorrentState::Paused
+        } else if self.piece_manager.read().is_complete() {
+            TorrentState::Seeding
+        } else {
+            TorrentState::Downloading
+        };
+        let progress = self.piece_manager.read().progress();
+        let mut stats = self.stats.lock();
+        stats.state = state;
+        stats.progress = progress;
+        stats.downloaded = rd.downloaded;
+        stats.uploaded = rd.uploaded;
     }
 
     pub fn snapshot_resume(&self) -> ResumeData {
