@@ -543,7 +543,7 @@ fn top_bar_view(
                                 match std::fs::read(&path) {
                                     Ok(data) => match MetaInfo::from_bytes(&data) {
                                         Ok(meta) => {
-                                            let suggested_dir = engine.config.download_dir.clone();
+                                            let suggested_dir = engine.config.read().unwrap().download_dir.clone();
                                             if let Ok(mut p) = pending_from_button.lock() {
                                                 p.push(PendingTorrent {
                                                     name: meta.name,
@@ -1439,7 +1439,7 @@ fn status_bar_view(
     engine: &TorrentEngine,
 ) -> View {
     let th = theme();
-    let port = engine.config.listen_port;
+    let port = engine.config.read().unwrap().listen_port;
 
     Row(Modifier::new()
         .fill_max_width()
@@ -1608,6 +1608,8 @@ fn url_dialog_view(
                                                             data,
                                                             suggested_dir: engine
                                                                 .config
+                                                                .read()
+                                                                .unwrap()
                                                                 .download_dir
                                                                 .clone(),
                                                         });
@@ -1714,11 +1716,35 @@ fn settings_dialog_view(
 ) -> View {
     let th = theme();
     let config: Rc<Signal<Config>> =
-        remember_with_key(state.key("cfg"), || signal((*engine.config).clone()));
+        remember_with_key(state.key("cfg"), || signal(engine.config.read().unwrap().clone()));
     let last_visible = remember_with_key(state.key("lv"), || signal(false));
+
+    let listen_port_input: Rc<Signal<String>> =
+        remember_with_key(state.key("si_port"), || signal(String::new()));
+    let max_conn_input: Rc<Signal<String>> =
+        remember_with_key(state.key("si_mc"), || signal(String::new()));
+    let max_pt_input: Rc<Signal<String>> =
+        remember_with_key(state.key("si_mpt"), || signal(String::new()));
+    let pipeline_input: Rc<Signal<String>> =
+        remember_with_key(state.key("si_pd"), || signal(String::new()));
+    let upload_slots_input: Rc<Signal<String>> =
+        remember_with_key(state.key("si_us"), || signal(String::new()));
+    let max_dl_input: Rc<Signal<String>> =
+        remember_with_key(state.key("si_mdl"), || signal(String::new()));
+    let max_ul_input: Rc<Signal<String>> =
+        remember_with_key(state.key("si_mul"), || signal(String::new()));
+
     let vis = state.is_visible();
     if vis && !last_visible.get() {
-        config.set((*engine.config).clone());
+        let engine_cfg = engine.config.read().unwrap().clone();
+        config.set(engine_cfg.clone());
+        listen_port_input.set(engine_cfg.listen_port.to_string());
+        max_conn_input.set(engine_cfg.max_connections.to_string());
+        max_pt_input.set(engine_cfg.max_connections_per_torrent.to_string());
+        pipeline_input.set(engine_cfg.pipeline_depth.to_string());
+        upload_slots_input.set(engine_cfg.upload_slots.to_string());
+        max_dl_input.set(engine_cfg.max_download_rate.to_string());
+        max_ul_input.set(engine_cfg.max_upload_rate.to_string());
         last_visible.set(true);
     } else if !vis {
         last_visible.set(false);
@@ -1734,33 +1760,49 @@ fn settings_dialog_view(
             Box(Modifier::new().height(12.0)),
             ScrollArea(
                 Modifier::new().fill_max_width().max_height(400.0),
-                remember_scroll_state("settings_scroll"),
+                {
+                    let s = remember_scroll_state("settings_scroll");
+                    s.set_show_scrollbar(false);
+                    s
+                },
                 Column(Modifier::new().fill_max_width()).child({
                     let mut views: Vec<View> = Vec::new();
 
                     // Network section
                     views.push(Text("Network").size(16.0).color(th.on_surface));
                     views.push(Box(Modifier::new().height(8.0)));
-                    let settings_fields: Vec<(&str, u32)> = vec![
-                        ("Listen Port:", cfg.listen_port as u32),
-                        ("Max Connections:", cfg.max_connections as u32),
-                        ("Max Per Torrent:", cfg.max_connections_per_torrent as u32),
-                        ("Pipeline Depth:", cfg.pipeline_depth as u32),
-                        ("Upload Slots:", cfg.upload_slots as u32),
-                        ("Max DL Rate (0=\u{221E}):", cfg.max_download_rate as u32),
-                        ("Max UL Rate (0=\u{221E}):", cfg.max_upload_rate as u32),
-                    ];
-                    for (label, val) in settings_fields {
-                        views.push(
-                            Row(Modifier::new().fill_max_width().padding(2.0)).child((
-                                Text(label)
-                                    .size(12.0)
-                                    .color(th.on_surface_variant)
-                                    .modifier(Modifier::new().width(180.0)),
-                                Text(val.to_string()).size(12.0).color(th.on_surface),
-                            )),
-                        );
-                    }
+                    let field_row = |label: &str, input: &Rc<Signal<String>>| {
+                        Row(Modifier::new().fill_max_width().align_items(AlignItems::Center)).child((
+                            Text(label)
+                                .size(12.0)
+                                .color(th.on_surface_variant)
+                                .modifier(Modifier::new().width(150.0)),
+                            TextField(
+                                "",
+                                input.get(),
+                                Modifier::new().flex_grow(1.0).height(28.0),
+                                Some({
+                                    let s = input.clone();
+                                    move |v| s.set(v)
+                                }),
+                                None::<fn(String)>,
+                            ),
+                        ))
+                    };
+                    views.push(Box(Modifier::new().height(4.0)));
+                    views.push(field_row("Listen Port:", &listen_port_input));
+                    views.push(Box(Modifier::new().height(4.0)));
+                    views.push(field_row("Max Connections:", &max_conn_input));
+                    views.push(Box(Modifier::new().height(4.0)));
+                    views.push(field_row("Max Per Torrent:", &max_pt_input));
+                    views.push(Box(Modifier::new().height(4.0)));
+                    views.push(field_row("Pipeline Depth:", &pipeline_input));
+                    views.push(Box(Modifier::new().height(4.0)));
+                    views.push(field_row("Upload Slots:", &upload_slots_input));
+                    views.push(Box(Modifier::new().height(4.0)));
+                    views.push(field_row("Max DL Rate (0=\u{221E}):", &max_dl_input));
+                    views.push(Box(Modifier::new().height(4.0)));
+                    views.push(field_row("Max UL Rate (0=\u{221E}):", &max_ul_input));
 
                     // Downloads
                     views.push(Box(Modifier::new().height(12.0)));
@@ -1837,19 +1879,34 @@ fn settings_dialog_view(
                 .align_items(AlignItems::Center)
                 .justify_content(JustifyContent::End))
             .child((
-                TextButton(
-                    Modifier::new(),
-                    {
-                        let s = state.clone();
-                        let c = config.clone();
-                        let e = engine.clone();
-                        move || {
-                            c.set((*e.config).clone());
-                            s.dismiss();
-                        }
-                    },
-                    || Text("Cancel"),
-                ),
+                    TextButton(
+                        Modifier::new(),
+                        {
+                            let s = state.clone();
+                            let c = config.clone();
+                            let e = engine.clone();
+                            let lp = listen_port_input.clone();
+                            let mc = max_conn_input.clone();
+                            let mpt = max_pt_input.clone();
+                            let pd = pipeline_input.clone();
+                            let us = upload_slots_input.clone();
+                            let mdl = max_dl_input.clone();
+                            let mul = max_ul_input.clone();
+                            move || {
+                                let engine_cfg = e.config.read().unwrap().clone();
+                                c.set(engine_cfg.clone());
+                                lp.set(engine_cfg.listen_port.to_string());
+                                mc.set(engine_cfg.max_connections.to_string());
+                                mpt.set(engine_cfg.max_connections_per_torrent.to_string());
+                                pd.set(engine_cfg.pipeline_depth.to_string());
+                                us.set(engine_cfg.upload_slots.to_string());
+                                mdl.set(engine_cfg.max_download_rate.to_string());
+                                mul.set(engine_cfg.max_upload_rate.to_string());
+                                s.dismiss();
+                            }
+                        },
+                        || Text("Cancel"),
+                    ),
                 Box(Modifier::new().width(8.0)),
                 FilledButton(
                     Modifier::new(),
@@ -1857,8 +1914,36 @@ fn settings_dialog_view(
                         let s = state.clone();
                         let e = engine.clone();
                         let c = config.clone();
+                        let lp = listen_port_input.clone();
+                        let mc = max_conn_input.clone();
+                        let mpt = max_pt_input.clone();
+                        let pd = pipeline_input.clone();
+                        let us = upload_slots_input.clone();
+                        let mdl = max_dl_input.clone();
+                        let mul = max_ul_input.clone();
                         move || {
-                            let cfg = c.get();
+                            let mut cfg = c.get();
+                            if let Ok(v) = lp.get().parse::<u16>() {
+                                cfg.listen_port = v;
+                            }
+                            if let Ok(v) = mc.get().parse::<usize>() {
+                                cfg.max_connections = v;
+                            }
+                            if let Ok(v) = mpt.get().parse::<usize>() {
+                                cfg.max_connections_per_torrent = v;
+                            }
+                            if let Ok(v) = pd.get().parse::<u32>() {
+                                cfg.pipeline_depth = v;
+                            }
+                            if let Ok(v) = us.get().parse::<usize>() {
+                                cfg.upload_slots = v;
+                            }
+                            if let Ok(v) = mdl.get().parse::<u64>() {
+                                cfg.max_download_rate = v;
+                            }
+                            if let Ok(v) = mul.get().parse::<u64>() {
+                                cfg.max_upload_rate = v;
+                            }
                             let _ = cfg.save();
                             e.apply_config(&cfg);
                             s.dismiss();

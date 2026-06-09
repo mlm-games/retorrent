@@ -6,12 +6,12 @@ use crate::network::TorrentSession;
 use crate::types::*;
 use dashmap::DashMap;
 use std::path::PathBuf;
-use std::sync::Arc;
+use std::sync::{Arc, RwLock};
 use tokio_util::sync::CancellationToken;
 
 #[derive(Clone)]
 pub struct TorrentEngine {
-    pub config: Arc<Config>,
+    pub config: Arc<RwLock<Config>>,
     pub peer_id: PeerId,
     pub sessions: Arc<DashMap<InfoHash, Arc<TorrentSession>>>,
     pub dht: Option<Arc<DhtNode>>,
@@ -40,20 +40,20 @@ impl TorrentEngine {
         };
 
         let engine = Self {
-            config: Arc::new(config),
+            config: Arc::new(RwLock::new(config)),
             peer_id: PeerId::generate(),
             sessions: Arc::new(DashMap::new()),
             dht,
             cancellation_token: CancellationToken::new(),
         };
 
-        if engine.config.upnp_enabled {
+        if engine.config.read().unwrap().upnp_enabled {
             let cancel = engine.cancellation_token.clone();
-            let port = engine.config.listen_port;
+            let port = engine.config.read().unwrap().listen_port;
             tokio::spawn(async move { crate::nat::run(port, cancel).await });
         }
 
-        if engine.config.auto_resume {
+        if engine.config.read().unwrap().auto_resume {
             engine.load_resume_data();
         }
 
@@ -73,7 +73,7 @@ impl TorrentEngine {
             return Ok(info_hash);
         }
 
-        let dir = download_dir.unwrap_or_else(|| self.config.download_dir.clone());
+        let dir = download_dir.unwrap_or_else(|| self.config.read().unwrap().download_dir.clone());
         if let Err(e) = std::fs::create_dir_all(&dir) {
             tracing::warn!("Failed to create download dir {:?}: {}", dir, e);
         }
@@ -82,7 +82,7 @@ impl TorrentEngine {
             meta,
             dir,
             self.peer_id,
-            self.config.clone(),
+            Arc::new(self.config.read().unwrap().clone()),
             file_priorities,
         )?;
 
@@ -141,12 +141,12 @@ impl TorrentEngine {
             is_private: false,
         };
 
-        let dir = download_dir.unwrap_or_else(|| self.config.download_dir.clone());
+        let dir = download_dir.unwrap_or_else(|| self.config.read().unwrap().download_dir.clone());
         if let Err(e) = std::fs::create_dir_all(&dir) {
             tracing::warn!("Failed to create download dir {:?}: {}", dir, e);
         }
 
-        let session = TorrentSession::new(meta, dir, self.peer_id, self.config.clone(), None)?;
+        let session = TorrentSession::new(meta, dir, self.peer_id, Arc::new(self.config.read().unwrap().clone()), None)?;
 
         session.stats.lock().state = TorrentState::FetchingMetadata;
 
@@ -158,7 +158,7 @@ impl TorrentEngine {
     pub fn start_torrent(&self, info_hash: &InfoHash, rt: &tokio::runtime::Runtime) {
         if let Some(session) = self.sessions.get(info_hash) {
             let session = session.value().clone();
-            let max_peers = self.config.max_connections_per_torrent;
+            let max_peers = self.config.read().unwrap().max_connections_per_torrent;
             let dht = self.dht.clone();
             rt.spawn(async move {
                 session.start(max_peers, dht).await;
@@ -209,9 +209,9 @@ impl TorrentEngine {
                         let info_hash = meta.info_hash;
                         match TorrentSession::new(
                             meta,
-                            self.config.download_dir.clone(),
+                            self.config.read().unwrap().download_dir.clone(),
                             self.peer_id,
-                            self.config.clone(),
+                            Arc::new(self.config.read().unwrap().clone()),
                             Some(&rd.file_priorities),
                         ) {
                             Ok(session) => {
@@ -238,6 +238,7 @@ impl TorrentEngine {
     }
 
     pub fn apply_config(&self, new_config: &Config) {
+        *self.config.write().unwrap() = new_config.clone();
         for entry in self.sessions.iter() {
             let session = entry.value();
             session.dl_limiter.set_rate(new_config.max_download_rate);
