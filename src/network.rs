@@ -60,6 +60,7 @@ pub struct TorrentSession {
     pub file_priorities: Arc<Mutex<Vec<FilePriority>>>,
     cancel_token: tokio_util::sync::CancellationToken,
     completed_sent: Arc<AtomicBool>,
+    seed_ratio_reached: Arc<AtomicBool>,
     completed_time: Mutex<Option<i64>>,
     pub dl_limiter: Arc<RateLimiter>,
     pub ul_limiter: Arc<RateLimiter>,
@@ -142,6 +143,7 @@ impl TorrentSession {
             file_priorities,
             cancel_token: tokio_util::sync::CancellationToken::new(),
             completed_sent: Arc::new(AtomicBool::new(false)),
+            seed_ratio_reached: Arc::new(AtomicBool::new(false)),
             completed_time: Mutex::new(None),
             dl_limiter: Arc::new(RateLimiter::new(config.max_download_rate)),
             ul_limiter: Arc::new(RateLimiter::new(config.max_upload_rate)),
@@ -246,6 +248,9 @@ impl TorrentSession {
         let session_tx = peer_tx.clone();
         tokio::spawn(async move {
             while let Some(event) = peer_rx.recv().await {
+                if peer_session.seed_ratio_reached.load(Ordering::Relaxed) {
+                    continue;
+                }
                 let (addr, incoming) = match event {
                     PeerEvent::AddPeers(peers) => {
                         for addr in peers {
@@ -591,6 +596,7 @@ impl TorrentSession {
                     let ul = self.total_uploaded.load(Ordering::Relaxed);
                     if dl > 0 && (ul as f64 / dl as f64) >= self.config.seed_ratio_limit {
                         tracing::info!("Seed ratio reached, stopping");
+                        self.seed_ratio_reached.store(true, Ordering::Relaxed);
                         break;
                     }
                 }
@@ -1270,6 +1276,10 @@ impl TorrentSession {
                 TorrentState::Paused
             } else if self.meta.read().num_pieces() == 0 {
                 TorrentState::FetchingMetadata
+            } else if self.piece_manager.read().is_complete()
+                && self.seed_ratio_reached.load(Ordering::Relaxed)
+            {
+                TorrentState::Complete
             } else if self.piece_manager.read().is_complete() {
                 TorrentState::Seeding
             } else {
