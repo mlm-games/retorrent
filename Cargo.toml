@@ -166,8 +166,6 @@ repose-macros = { git = "https://github.com/mlm-games/repose", package = "repose
 repose-tree = { git = "https://github.com/mlm-games/repose", package = "repose-tree" }
 repose-render-wgpu = { git = "https://github.com/mlm-games/repose", package = "repose-render-wgpu" }
 repose-navigation = { git = "https://github.com/mlm-games/repose", package = "repose-navigation" }
-repose-canvas = { git = "https://github.com/mlm-games/repose", package = "repose-canvas" }
-repose-docking = { git = "https://github.com/mlm-games/repose", package = "repose-docking" }
 
 [target.'cfg(target_os = "android")'.dependencies]
 android_logger = "0.15"

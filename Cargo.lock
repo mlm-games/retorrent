@@ -6447,13 +6447,3 @@ dependencies = [
  "syn 2.0.117",
  "winnow 1.0.3",
 ]
-
-[[patch.unused]]
-name = "repose-canvas"
-version = "0.17.6"
-source = "git+https://github.com/mlm-games/repose#bc6d30bf712a6951513e34771d0f8706b0702442"
-
-[[patch.unused]]
-name = "repose-docking"
-version = "0.17.6"
-source = "git+https://github.com/mlm-games/repose#bc6d30bf712a6951513e34771d0f8706b0702442"
