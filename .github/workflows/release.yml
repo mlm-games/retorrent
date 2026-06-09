@@ -46,97 +46,89 @@ jobs:
     permissions:
       contents: write
     outputs:
-      version_name: ${{ steps.bump.outputs.version_name }}
-      version_code: ${{ steps.bump.outputs.version_code }}
-      tag: ${{ steps.compute_tag.outputs.tag }}
-      commit_sha: ${{ steps.commit.outputs.commit_sha }}
+      version_name: ${{ steps.meta.outputs.version_name }}
+      version_code: ${{ steps.meta.outputs.version_code }}
+      tag: ${{ steps.meta.outputs.tag }}
+      commit_sha: ${{ steps.meta.outputs.commit_sha }}
       release_notes: ${{ steps.notes.outputs.release-notes }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           fetch-depth: 0
 
-      - name: Bump Cargo version (patch) and set versionCode
-        id: bump
+      - name: Set version/tag metadata
+        id: meta
         shell: bash
         run: |
           set -euo pipefail
-          CARGO_TOML="Cargo.toml"
 
-          OLD_VERSION=$(grep -m1 '^version\s*=\s*"' "$CARGO_TOML" | sed -E 's/.*"([^"]+)".*/\1/')
-          if [[ -z "$OLD_VERSION" ]]; then
-            echo "Could not detect package.version in Cargo.toml" >&2
-            exit 1
+          if [[ "${{ github.event_name }}" == "push" ]]; then
+            TAG="${GITHUB_REF_NAME}"
+            VERSION="${TAG#v}"
+          else
+            OLD_VERSION=$(grep -m1 '^version\s*=\s*"' Cargo.toml | sed -E 's/.*"([^"]+)".*/\1/')
+            IFS='.' read -r MAJ MIN PAT <<<"$OLD_VERSION"
+            VERSION="$MAJ.$MIN.$((PAT+1))"
           fi
-          IFS='.' read -r MAJ MIN PAT <<<"$OLD_VERSION"; : "${MAJ:=0}" "${MIN:=0}" "${PAT:=0}"
-          NEW_VERSION="$MAJ.$MIN.$((PAT+1))"
-          sed -i -E "0,/^version\s*=.*/s//version = \"$NEW_VERSION\"/" "$CARGO_TOML"
 
-          IFS='.' read -r NMAJ NMIN NPAT <<<"$NEW_VERSION"
+          IFS='.' read -r NMAJ NMIN NPAT <<<"$VERSION"
           APK_ID=1
           VERSION_CODE=$(( (APK_ID<<24) | (NMAJ<<16) | (NMIN<<8) | NPAT ))
 
-          if grep -q '^\[package\.metadata\.android\.sdk\]' "$CARGO_TOML"; then
-            if grep -q '^version_code\s*=' "$CARGO_TOML"; then
-              sed -i -E "0,/^version_code\s*=.*/s//version_code = $VERSION_CODE/" "$CARGO_TOML"
+          if [[ "${{ github.event_name }}" != "push" ]]; then
+            sed -i -E "0,/^version\s*=.*/s//version = \"$VERSION\"/" Cargo.toml
+
+            if grep -q '^\[package\.metadata\.android\.sdk\]' Cargo.toml; then
+              if grep -q '^version_code\s*=' Cargo.toml; then
+                sed -i -E "0,/^version_code\s*=.*/s//version_code = $VERSION_CODE/" Cargo.toml
+              else
+                awk -v vc="$VERSION_CODE" '
+                  BEGIN{printed=0}
+                  {print}
+                  /^\[package\.metadata\.android\.sdk\]$/ && printed==0 {print "version_code = " vc; printed=1}
+                ' Cargo.toml > Cargo.toml.new && mv Cargo.toml.new Cargo.toml
+              fi
             else
-              awk -v vc="$VERSION_CODE" '
-                BEGIN{printed=0}
-                {print}
-                /^\[package\.metadata\.android\.sdk\]$/ && printed==0 {print "version_code = " vc; printed=1}
-              ' "$CARGO_TOML" > Cargo.toml.new && mv Cargo.toml.new "$CARGO_TOML"
+              printf '\n[package.metadata.android.sdk]\nversion_code = %s\n' "$VERSION_CODE" >> Cargo.toml
             fi
-          else
-            {
-              echo ""
-              echo "[package.metadata.android.sdk]"
-              echo "version_code = $VERSION_CODE"
-            } >> "$CARGO_TOML"
+
+            cargo update -w
+            git config --local user.email "github-actions[bot]@users.noreply.github.com"
+            git config --local user.name "github-actions[bot]"
+            git add Cargo.toml Cargo.lock
+            git commit -m "chore: bump to v$VERSION (code $VERSION_CODE) [skip ci]" || true
+            git push
+
+            TAG="v$VERSION"
+            git tag -a "$TAG" -m "Release $TAG"
+            git push origin "$TAG"
           fi
 
-          echo "version_name=$NEW_VERSION"     >> "$GITHUB_OUTPUT"
-          echo "version_code=$VERSION_CODE"    >> "$GITHUB_OUTPUT"
-          echo "Bumped version: $OLD_VERSION -> $NEW_VERSION; version_code=$VERSION_CODE"
-
-      # - name: Generate Release Notes
-      #   id: notes
-      #   uses: mlm-games/release-notes-generator@main
-      #   with:
-      #     version: ${{ steps.bump.outputs.version_name }}
-      #     changelog-path: "CHANGELOG.md"
-      #     version-file-path: "./fastlane/metadata/android/en-US/changelogs/${{ steps.bump.outputs.version_code }}.txt"
-      #     version-code: "${{ steps.bump.outputs.version_code }}"
-      #     metainfo-path: "./others/flathub/io.github.mlm_games.retorrent.metainfo.xml"
-      #     format: "- {{subject}}"
-      #     exclude-patterns: "chore:,ci:,docs:,build:,Bump version,Merge pull request,[skip ci]"
-      #     auto-commit: "false"
-
-      - name: Update Cargo.lock
-        shell: bash
-        run: |
-          set -e
-          cargo update -w
-          git add Cargo.lock || true
-
-      - name: Commit changes
-        id: commit
-        shell: bash
-        run: |
-          set -e
-          git config --local user.email "github-actions[bot]@users.noreply.github.com"
-          git config --local user.name "github-actions[bot]"
-          git add Cargo.toml fastlane/metadata/android/en-US/changelogs others/flathub || true
-          git commit -m "chore: bump to v${{ steps.bump.outputs.version_name }} (code ${{ steps.bump.outputs.version_code }}) [skip ci]" || true
-          git push
+          echo "version_name=$VERSION"     >> "$GITHUB_OUTPUT"
+          echo "version_code=$VERSION_CODE" >> "$GITHUB_OUTPUT"
+          echo "tag=v$VERSION"             >> "$GITHUB_OUTPUT"
           echo "commit_sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
 
-      - name: Create and push tag
-        shell: bash
+      - name: Validate tag matches workspace version
         run: |
-          set -e
-          TAG="v${{ steps.bump.outputs.version_name }}"
-          git tag -a "$TAG" -m "Release $TAG"
-          git push origin "$TAG"
+          VERSION=$(cargo metadata --no-deps --format-version=1 | jq -r '.packages[0].version')
+          if [ "v$VERSION" != "${{ steps.meta.outputs.tag }}" ]; then
+            echo "Version mismatch: tag ${{ steps.meta.outputs.tag }} != Cargo.toml v$VERSION"
+            exit 1
+          fi
+
+      - name: Generate Release Notes
+        id: notes
+        uses: mlm-games/release-notes-generator@main
+        with:
+          version: ${{ steps.meta.outputs.version_name }}
+          changelog-path: "CHANGELOG.md"
+          version-file-path: "./fastlane/metadata/android/en-US/changelogs/${{ steps.meta.outputs.version_code }}.txt"
+          version-code: "${{ steps.meta.outputs.version_code }}"
+          metainfo-path: "./others/flathub/io.github.mlm_games.retorrent.metainfo.xml"
+          format: "- {{subject}}"
+          exclude-patterns: "chore:,ci:,docs:,build:,Bump version,Merge pull request,[skip ci]"
+          auto-commit: "false"
 
   build:
     name: Build and package (desktop)
