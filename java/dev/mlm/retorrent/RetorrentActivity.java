@@ -1,4 +1,4 @@
-package dev.mlm.retorrent;
+package org.mlm.retorrent;
 
 import android.app.NativeActivity;
 import android.content.Intent;

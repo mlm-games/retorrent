@@ -18,7 +18,7 @@ path = "src/main.rs"
 required-features = ["desktop-bin"]
 
 [package.metadata.android]
-package = "dev.mlm.retorrent"
+package = "org.mlm.retorrent"
 apk_name = "retorrent"
 build_targets = ["aarch64-linux-android"]
 resources = "others/packaging/res"
@@ -53,7 +53,7 @@ name = "android.permission.POST_NOTIFICATIONS"
 name = "android.permission.WAKE_LOCK"
 
 [[package.metadata.android.application.activity]]
-name = "dev.mlm.retorrent.RetorrentActivity"
+name = "org.mlm.retorrent.RetorrentActivity"
 exported = true
 launch_mode = "singleTask"
 
@@ -90,7 +90,7 @@ categories = [
 scheme = "magnet"
 
 [[package.metadata.android.application.service]]
-name = "dev.mlm.retorrent.TorrentService"
+name = "org.mlm.retorrent.TorrentService"
 foreground_service_type = "dataSync"
 exported = true
 

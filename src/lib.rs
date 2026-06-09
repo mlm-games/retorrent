@@ -281,7 +281,7 @@ pub extern "C" fn android_main(android_app: winit::platform::android::activity::
             let s: String = JString::cast_local(env, jpath)?.try_to_string(env)?;
             Ok(PathBuf::from(s))
         })
-        .unwrap_or_else(|_| PathBuf::from("/data/data/dev.mlm.retorrent"));
+        .unwrap_or_else(|_| PathBuf::from("/data/data/org.mlm.retorrent"));
     config::ANDROID_DATA_DIR.set(android_data_dir.clone()).ok();
 
     // Read the launch intent saved by RetorrentActivity.onCreate to a file.
@@ -343,7 +343,7 @@ pub extern "C" fn android_main(android_app: winit::platform::android::activity::
     let _ = jni_min_helper::jni_with_env(|env| -> Result<(), jni::errors::Error> {
         let ctx = jni_min_helper::android_context();
         let intent = env.new_object(jni_str!("android/content/Intent"), jni_sig!("()V"), &[])?;
-        let svc_name = JString::new(env, "dev.mlm.retorrent.TorrentService")?;
+        let svc_name = JString::new(env, "org.mlm.retorrent.TorrentService")?;
         env.call_method(
             &intent,
             jni_str!("setClassName"),
@@ -401,7 +401,7 @@ pub extern "C" fn android_main(android_app: winit::platform::android::activity::
     let _ = jni_min_helper::jni_with_env(|env| -> Result<(), jni::errors::Error> {
         let ctx = jni_min_helper::android_context();
         let intent = env.new_object(jni_str!("android/content/Intent"), jni_sig!("()V"), &[])?;
-        let svc_name = JString::new(env, "dev.mlm.retorrent.TorrentService")?;
+        let svc_name = JString::new(env, "org.mlm.retorrent.TorrentService")?;
         env.call_method(
             &intent,
             jni_str!("setClassName"),
