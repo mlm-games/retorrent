@@ -58,7 +58,7 @@ pub struct TorrentSession {
     pub total_uploaded: Arc<AtomicU64>,
     pub active_peers: Arc<AtomicU64>,
     pub file_priorities: Arc<Mutex<Vec<FilePriority>>>,
-    cancel_token: tokio_util::sync::CancellationToken,
+    cancel_token: parking_lot::Mutex<tokio_util::sync::CancellationToken>,
     completed_sent: Arc<AtomicBool>,
     seed_ratio_reached: Arc<AtomicBool>,
     completed_time: Mutex<Option<i64>>,
@@ -141,7 +141,7 @@ impl TorrentSession {
             total_uploaded: Arc::new(AtomicU64::new(0)),
             active_peers: Arc::new(AtomicU64::new(0)),
             file_priorities,
-            cancel_token: tokio_util::sync::CancellationToken::new(),
+            cancel_token: parking_lot::Mutex::new(tokio_util::sync::CancellationToken::new()),
             completed_sent: Arc::new(AtomicBool::new(false)),
             seed_ratio_reached: Arc::new(AtomicBool::new(false)),
             completed_time: Mutex::new(None),
@@ -170,6 +170,8 @@ impl TorrentSession {
                 .read()
                 .apply_file_priorities(&self.meta.read().files, &rd.file_priorities);
         }
+        self.paused
+            .store(rd.prev_state == PrevState::Paused, Ordering::Relaxed);
     }
 
     pub fn snapshot_resume(&self) -> ResumeData {
@@ -188,6 +190,11 @@ impl TorrentSession {
             added_time: chrono::Utc::now().timestamp(),
             completed_time: *self.completed_time.lock(),
             torrent_bytes: self.torrent_bytes.lock().clone(),
+            prev_state: if self.paused.load(Ordering::Relaxed) || !self.started.load(Ordering::Relaxed) {
+                PrevState::Paused
+            } else {
+                PrevState::Running
+            },
         }
     }
 
@@ -334,7 +341,7 @@ impl TorrentSession {
                 storage: self.storage.read().clone(),
                 stats: self.stats.clone(),
                 total_downloaded: self.total_downloaded.clone(),
-                cancel: self.cancel_token.clone(),
+                cancel: self.cancel_token.lock().clone(),
             };
             tokio::spawn(async move {
                 webseed_source.run().await;
@@ -355,15 +362,16 @@ impl TorrentSession {
         peer_tx: mpsc::Sender<PeerEvent>,
     ) {
         let mut peers = dht.get_peers(info_hash, Some(port));
+        let token = self.cancel_token.lock().clone();
         loop {
             tokio::select! {
                 Some(peer) = peers.next() => {
                     if let SocketAddr::V4(v4) = peer {
-                        if self.cancel_token.is_cancelled() { break; }
+                        if token.is_cancelled() { break; }
                         let _ = peer_tx.send(PeerEvent::AddPeers(vec![v4])).await;
                     }
                 }
-                _ = self.cancel_token.cancelled() => break,
+                _ = token.cancelled() => break,
             }
         }
     }
@@ -379,8 +387,9 @@ impl TorrentSession {
         };
         tracing::info!("Listening for incoming peers on {}", bind_addr);
 
+        let token = self.cancel_token.lock().clone();
         loop {
-            if self.cancel_token.is_cancelled() {
+            if token.is_cancelled() {
                 break;
             }
             tokio::select! {
@@ -397,7 +406,7 @@ impl TorrentSession {
                         }
                     }
                 }
-                _ = self.cancel_token.cancelled() => break,
+                _ = token.cancelled() => break,
             }
         }
     }
@@ -426,8 +435,10 @@ impl TorrentSession {
             }
         }
 
+        let token = self.cancel_token.lock().clone();
+
         loop {
-            if self.cancel_token.is_cancelled() {
+            if token.is_cancelled() {
                 break;
             }
 
@@ -435,7 +446,7 @@ impl TorrentSession {
                 // Still fetching metadata — skip tracker announce.
                 tokio::select! {
                     _ = tokio::time::sleep(Duration::from_secs(interval)) => {},
-                    _ = self.cancel_token.cancelled() => break,
+                    _ = token.cancelled() => break,
                 }
                 continue;
             }
@@ -507,7 +518,7 @@ impl TorrentSession {
 
             tokio::select! {
                 _ = tokio::time::sleep(Duration::from_secs(interval)) => {},
-                _ = self.cancel_token.cancelled() => break,
+                _ = token.cancelled() => break,
             }
         }
 
@@ -584,9 +595,10 @@ impl TorrentSession {
         let mut last_pex_drain = Instant::now();
         let mut known_peers: Vec<SocketAddrV4> = Vec::new();
         let mut already_dialed: HashSet<SocketAddrV4> = HashSet::new();
+        let token = self.cancel_token.lock().clone();
 
         loop {
-            if self.cancel_token.is_cancelled() || self.paused.load(Ordering::Relaxed) {
+            if token.is_cancelled() || self.paused.load(Ordering::Relaxed) {
                 break;
             }
             if self.meta.read().num_pieces() > 0 && self.piece_manager.read().is_complete() {
@@ -1170,15 +1182,16 @@ impl TorrentSession {
     async fn choke_loop(self: Arc<Self>) {
         let mut prev_downloaded: HashMap<SocketAddrV4, u64> = HashMap::new();
         let mut last_opt_unchoke = Instant::now();
+        let token = self.cancel_token.lock().clone();
 
         loop {
-            if self.cancel_token.is_cancelled() {
+            if token.is_cancelled() {
                 break;
             }
 
             tokio::time::sleep(Duration::from_secs(1)).await;
 
-            if self.cancel_token.is_cancelled() {
+            if token.is_cancelled() {
                 break;
             }
 
@@ -1248,9 +1261,10 @@ impl TorrentSession {
         let mut last_downloaded = 0u64;
         let mut last_uploaded = 0u64;
         let mut resume_timer = Instant::now();
+        let token = self.cancel_token.lock().clone();
 
         loop {
-            if self.cancel_token.is_cancelled() {
+            if token.is_cancelled() {
                 break;
             }
 
@@ -1311,14 +1325,17 @@ impl TorrentSession {
 
     pub fn pause(&self) {
         self.paused.store(true, Ordering::Relaxed);
+        self.cancel_token.lock().cancel();
     }
 
     pub fn resume(&self) {
         self.paused.store(false, Ordering::Relaxed);
+        *self.cancel_token.lock() = tokio_util::sync::CancellationToken::new();
+        self.started.store(false, Ordering::Relaxed);
     }
 
     pub fn stop(&self) {
-        self.cancel_token.cancel();
+        self.cancel_token.lock().cancel();
         let rd = self.snapshot_resume();
         let _ = rd.save_to_dir(&Config::resume_dir());
     }

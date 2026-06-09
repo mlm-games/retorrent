@@ -28,7 +28,7 @@ impl TorrentEngine {
         self.config.write().expect("engine config poisoned")
     }
 
-    pub async fn new(config: Config) -> Self {
+    pub async fn new(config: Config) -> (Self, Vec<InfoHash>) {
         create_dir_all(&config.download_dir).ok();
         create_dir_all(Config::resume_dir()).ok();
 
@@ -62,11 +62,13 @@ impl TorrentEngine {
             tokio::spawn(async move { crate::nat::run(port, cancel).await });
         }
 
-        if engine.config_read().auto_resume {
-            engine.load_resume_data();
-        }
+        let to_start = if engine.config_read().auto_resume {
+            engine.load_resume_data()
+        } else {
+            Vec::new()
+        };
 
-        engine
+        (engine, to_start)
     }
 
     pub fn add_torrent_from_bytes(
@@ -187,10 +189,11 @@ impl TorrentEngine {
         }
     }
 
-    pub fn resume_torrent(&self, info_hash: &InfoHash) {
+    pub fn resume_torrent(&self, info_hash: &InfoHash, rt: &tokio::runtime::Runtime) {
         if let Some(session) = self.sessions.get(info_hash) {
             session.resume();
         }
+        self.start_torrent(info_hash, rt);
     }
 
     pub fn remove_torrent(&self, info_hash: &InfoHash, delete_files: bool) {
@@ -214,10 +217,12 @@ impl TorrentEngine {
         }
     }
 
-    fn load_resume_data(&self) {
+    fn load_resume_data(&self) -> Vec<InfoHash> {
         let dir = Config::resume_dir();
         let all = ResumeData::list_all(&dir);
+        let mut to_start = Vec::new();
         for rd in all {
+            let should_start = rd.prev_state == PrevState::Running;
             if let Some(torrent_bytes) = &rd.torrent_bytes {
                 match MetaInfo::from_bytes(torrent_bytes) {
                     Ok(meta) => {
@@ -233,6 +238,9 @@ impl TorrentEngine {
                                 session.apply_resume(&rd);
                                 session.set_torrent_bytes(torrent_bytes.clone());
                                 self.sessions.insert(info_hash, session);
+                                if should_start {
+                                    to_start.push(info_hash);
+                                }
                                 tracing::info!("Resumed torrent: {}", info_hash);
                             }
                             Err(e) => {
@@ -250,6 +258,7 @@ impl TorrentEngine {
                 }
             }
         }
+        to_start
     }
 
     pub fn apply_config(&self, new_config: &Config) {

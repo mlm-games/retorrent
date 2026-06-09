@@ -113,6 +113,14 @@ pub enum TorrentState {
     FetchingMetadata,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum PrevState {
+    Running,
+    #[default]
+    Paused,
+}
+
 impl fmt::Display for TorrentState {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
@@ -332,6 +340,8 @@ pub struct ResumeData {
     pub added_time: i64,
     pub completed_time: Option<i64>,
     pub torrent_bytes: Option<Vec<u8>>,
+    #[serde(default)]
+    pub prev_state: PrevState,
 }
 
 impl ResumeData {

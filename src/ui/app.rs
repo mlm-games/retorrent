@@ -687,8 +687,7 @@ fn top_bar_view(
                 let rt = rt.clone();
                 move || {
                     if let Some(hash) = selected.get() {
-                        engine.resume_torrent(&hash);
-                        engine.start_torrent(&hash, &rt);
+                        engine.resume_torrent(&hash, &rt);
                     }
                 }
             },

@@ -152,7 +152,8 @@ pub fn run_desktop_main() -> Result<()> {
     );
 
     let minimize_to_tray = config.minimize_to_tray;
-    let engine = rt.block_on(async { Arc::new(TorrentEngine::new(config).await) });
+    let (engine, auto_start) = rt.block_on(async { TorrentEngine::new(config).await });
+    let engine = Arc::new(engine);
 
     let engine_for_shutdown = engine.clone();
     let pending: Arc<Mutex<Vec<PendingTorrent>>> = Arc::new(Mutex::new(Vec::new()));
@@ -173,6 +174,10 @@ pub fn run_desktop_main() -> Result<()> {
             },
             Err(e) => tracing::error!("Failed to read {}: {}", path, e),
         }
+    }
+
+    for hash in &auto_start {
+        engine.start_torrent(hash, &rt);
     }
 
     if headless {
@@ -343,9 +348,14 @@ pub extern "C" fn android_main(android_app: winit::platform::android::activity::
     let mut config = Config::load_or_default();
     config.download_dir = download_dir;
     let download_dir = config.download_dir.clone();
-    let engine = rt.block_on(async { Arc::new(TorrentEngine::new(config).await) });
+    let (engine, auto_start) = rt.block_on(async { TorrentEngine::new(config).await });
+    let engine = Arc::new(engine);
     android_service::ENGINE.set(engine.clone()).ok();
     android_service::RUNTIME.set(rt.clone()).ok();
+
+    for hash in &auto_start {
+        engine.start_torrent(hash, &rt);
+    }
 
     let _ = jni_min_helper::jni_with_env(|env| -> Result<(), jni::errors::Error> {
         let ctx = jni_min_helper::android_context();
