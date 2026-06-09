@@ -591,10 +591,11 @@ fn top_bar_view(
                                                                 total_size: meta.total_size,
                                                                 files: meta.files,
                                                                 data,
-                                                                suggested_dir: engine
-                                                                    .config
-                                                                    .download_dir
-                                                                    .clone(),
+                                                                 suggested_dir: engine
+                                                                     .config
+                                                                     .read().unwrap()
+                                                                     .download_dir
+                                                                     .clone(),
                                                             });
                                                         }
                                                     }
