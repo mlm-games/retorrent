@@ -264,6 +264,13 @@ pub extern "C" fn android_main(android_app: winit::platform::android::activity::
 
     rlobkit_dialogs::init();
 
+    let _ = jni_min_helper::jni_with_env(|env| -> Result<(), jni::errors::Error> {
+        let ctx = jni_min_helper::android_context();
+        let jobj = unsafe { jni::objects::JObject::from_raw(env, ctx.as_raw()) };
+        rustls_platform_verifier::android::init_with_env(env, jobj)?;
+        Ok(())
+    });
+
     if jni_min_helper::android_api_level() >= 33 {
         let _ = jni_min_helper::PermissionRequest::request(
             "Downloads",

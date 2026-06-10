@@ -3892,6 +3892,7 @@ dependencies = [
  "repose-ui",
  "reqwest",
  "rlobkit-dialogs",
+ "rustls-platform-verifier",
  "serde",
  "serde_json",
  "sha1",
