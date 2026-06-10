@@ -135,7 +135,7 @@ urlencoding = "2"
 hex = "0.4"
 web-time = "1"
 igd-next = "0.17"
-rlobkit-dialogs = { git = "https://github.com/mlm-games/rlobkit", package = "rlobkit-dialogs" }
+rlobkit-dialogs = "0.2.3"
 
 
 # rlobkit-dialogs = { path = "../rlobkit/rlobkit-dialogs" }

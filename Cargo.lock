@@ -3949,7 +3949,8 @@ dependencies = [
 [[package]]
 name = "rlobkit-core"
 version = "0.2.3"
-source = "git+https://github.com/mlm-games/rlobkit#cc1eb1384b1fc8a7f395a1e3ed151881b0fa00a7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "542436953f442a7de4bdabca8b92e0829618d428aac3aaae985258a5a86fdd91"
 dependencies = [
  "async-trait",
  "bytes",
@@ -3962,7 +3963,8 @@ dependencies = [
 [[package]]
 name = "rlobkit-dialogs"
 version = "0.2.3"
-source = "git+https://github.com/mlm-games/rlobkit#cc1eb1384b1fc8a7f395a1e3ed151881b0fa00a7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b7f6e581d24a31115a6fa54c540bd4945dfc92900382c9eee08993135afc41c7"
 dependencies = [
  "async-trait",
  "bytes",
