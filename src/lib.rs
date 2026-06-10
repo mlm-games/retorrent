@@ -157,7 +157,8 @@ pub fn run_desktop_main() -> Result<()> {
 
     let engine_for_shutdown = engine.clone();
     let pending: Arc<Mutex<Vec<PendingTorrent>>> = Arc::new(Mutex::new(Vec::new()));
-    let suggested_dir = dirs::download_dir().unwrap_or_else(|| engine.config_read().download_dir.clone());
+    let suggested_dir =
+        dirs::download_dir().unwrap_or_else(|| engine.config_read().download_dir.clone());
     for path in &torrent_files {
         match std::fs::read(path) {
             Ok(data) => match MetaInfo::from_bytes(&data) {
@@ -403,6 +404,57 @@ pub extern "C" fn android_main(android_app: winit::platform::android::activity::
         tracing::info!("deeplink: {} bytes as .torrent", data.len());
         android_service::queue_torrent_bytes(data);
     }));
+
+    // Background notification updater
+    {
+        let engine_notif = engine.clone();
+        rt.spawn(async move {
+            let mut tick = tokio::time::interval(std::time::Duration::from_secs(2));
+            tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+            loop {
+                tick.tick().await;
+                let hashes = engine_notif.get_all_info_hashes();
+                let mut total_progress = 0.0f64;
+                let mut active = 0usize;
+                let mut global_dl = 0u64;
+                let mut global_ul = 0u64;
+                for hash in &hashes {
+                    if let Some(session) = engine_notif.get_session(hash) {
+                        let s = session.stats.lock();
+                        total_progress += s.progress as f64;
+                        if matches!(
+                            s.state,
+                            crate::types::TorrentState::Downloading
+                                | crate::types::TorrentState::FetchingMetadata
+                        ) {
+                            active += 1;
+                        }
+                        global_dl += s.download_rate;
+                        global_ul += s.upload_rate;
+                    }
+                }
+                let avg_progress = if hashes.is_empty() {
+                    0.0
+                } else {
+                    total_progress / hashes.len() as f64
+                };
+                if !hashes.is_empty() {
+                    android_service::acquire_wake_lock_if_needed();
+                } else {
+                    android_service::release_wake_lock_if_held();
+                }
+                android_service::update_notification(
+                    &format!(
+                        "\u{2B07} {}  \u{2B06} {}",
+                        crate::human_bytes(global_dl),
+                        crate::human_bytes(global_ul)
+                    ),
+                    &format!("{} active / {} torrents", active, hashes.len()),
+                    avg_progress,
+                );
+            }
+        });
+    }
 
     let engine_for_shutdown = engine.clone();
     let pending: Arc<Mutex<Vec<PendingTorrent>>> = Arc::new(Mutex::new(Vec::new()));

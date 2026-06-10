@@ -126,8 +126,6 @@ pub fn app(
     let global_dl: Rc<Signal<u64>> = remember(|| signal(0));
     let global_ul: Rc<Signal<u64>> = remember(|| signal(0));
     let last_refresh: Rc<Signal<web_time::Instant>> = remember(|| signal(web_time::Instant::now()));
-    #[cfg(target_os = "android")]
-    let last_notify: Rc<Signal<web_time::Instant>> = remember(|| signal(web_time::Instant::now()));
 
     let overlay = remember(|| OverlayHandle::new());
     let magnet_state = remember(|| DialogState::new());
@@ -256,43 +254,6 @@ pub fn app(
         last_refresh.set(now);
     }
 
-    #[cfg(target_os = "android")]
-    {
-        let now = web_time::Instant::now();
-        if now.duration_since(last_notify.get()) > web_time::Duration::from_secs(2) {
-            last_notify.set(now);
-            let rows = torrents.get();
-            let active = rows
-                .iter()
-                .filter(|t| {
-                    matches!(
-                        t.stats.state,
-                        TorrentState::Downloading | TorrentState::FetchingMetadata
-                    )
-                })
-                .count();
-            let any_active = rows.iter().any(|t| {
-                matches!(
-                    t.stats.state,
-                    TorrentState::Downloading | TorrentState::Seeding
-                )
-            });
-            if any_active {
-                android_service::acquire_wake_lock_if_needed();
-            } else {
-                android_service::release_wake_lock_if_held();
-            }
-            android_service::update_notification(
-                &format!(
-                    "\u{2B07} {}  \u{2B06} {}",
-                    crate::human_bytes(global_dl.get()),
-                    crate::human_bytes(global_ul.get()),
-                ),
-                &format!("{} active / {} torrents", active, rows.len()),
-            );
-        }
-    }
-
     #[cfg(any(target_os = "linux", target_os = "windows", target_os = "macos"))]
     {
         let rows = torrents.get();
@@ -336,7 +297,10 @@ pub fn app(
         selected_hash.and_then(|hash| all_torrents.iter().find(|t| t.info_hash == hash).cloned());
 
     // Main content
-    let content = Column(Modifier::new().fill_max_size()).child((
+    let content = Column(
+        Modifier::new().fill_max_size(), // .system_bars_padding(), // .ime_padding(),
+    )
+    .child((
         top_bar_view(
             engine.clone(),
             rt.clone(),
@@ -595,10 +559,10 @@ fn top_bar_view(
                                                                 total_size: meta.total_size,
                                                                 files: meta.files,
                                                                 data,
-                                                                  suggested_dir: engine
-                                                                      .config_read()
-                                                                      .download_dir
-                                                                      .clone(),
+                                                                suggested_dir: engine
+                                                                    .config_read()
+                                                                    .download_dir
+                                                                    .clone(),
                                                             });
                                                         }
                                                     }
@@ -1719,9 +1683,8 @@ fn settings_dialog_view(
     engine: Arc<TorrentEngine>,
 ) -> View {
     let th = theme();
-    let config: Rc<Signal<Config>> = remember_with_key(state.key("cfg"), || {
-        signal(engine.config_read().clone())
-    });
+    let config: Rc<Signal<Config>> =
+        remember_with_key(state.key("cfg"), || signal(engine.config_read().clone()));
     let last_visible = remember_with_key(state.key("lv"), || signal(false));
 
     let listen_port_input: Rc<Signal<String>> =
@@ -1987,8 +1950,7 @@ fn settings_dialog_view(
                         let unchoke = unchoke_input.clone();
                         let sr = seed_ratio_input.clone();
                         move || {
-                            let engine_cfg =
-                                e.config_read().clone();
+                            let engine_cfg = e.config_read().clone();
                             c.set(engine_cfg.clone());
                             lp.set(engine_cfg.listen_port.to_string());
                             mc.set(engine_cfg.max_connections.to_string());
@@ -2259,7 +2221,12 @@ fn add_torrent_dialog_view(
                 )),
             );
             body.push(Box(Modifier::new().height(10.0)));
-            body.push(Text(&name).size(13.0).color(th.on_surface_variant).overflow_ellipsize());
+            body.push(
+                Text(&name)
+                    .size(13.0)
+                    .color(th.on_surface_variant)
+                    .overflow_ellipsize(),
+            );
             body.push(
                 Text(format!(
                     "{} \u{00B7} {}",
@@ -2397,8 +2364,14 @@ fn add_file_row_view(
             }
         }),
         Column(Modifier::new().flex_grow(1.0)).child((
-            Text(display_name).size(12.0).color(th.on_surface).overflow_ellipsize(),
-            Text(full_path).size(10.0).color(th.on_surface_variant).overflow_ellipsize(),
+            Text(display_name)
+                .size(12.0)
+                .color(th.on_surface)
+                .overflow_ellipsize(),
+            Text(full_path)
+                .size(10.0)
+                .color(th.on_surface_variant)
+                .overflow_ellipsize(),
         )),
         Text(size_text).size(11.0).color(th.on_surface_variant),
     ))

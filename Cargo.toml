@@ -144,6 +144,7 @@ rlobkit-dialogs = "0.2.3"
 # repose-material = { path = "../repose/crates/repose-material" }
 # repose-text = { path = "../repose/crates/repose-text" }
 # repose-devtools = { path = "../repose/crates/repose-devtools" }
+# repose-platform = { path = "../repose/crates/repose-platform" }
 
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]

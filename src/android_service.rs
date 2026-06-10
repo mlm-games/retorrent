@@ -52,7 +52,7 @@ pub extern "system" fn Java_org_mlm_retorrent_TorrentService_nativeOnCreate<'loc
             &[
                 JValue::from(&s_downloads),
                 JValue::from(&s_downloads_label),
-                JValue::Int(3),
+                JValue::Int(2),
             ],
         )?;
         let manager = env
@@ -99,6 +99,15 @@ pub extern "system" fn Java_org_mlm_retorrent_TorrentService_nativeOnCreate<'loc
             jni_sig!("(Z)Landroid/app/Notification$Builder;"),
             &[JValue::Bool(true)],
         )?;
+
+        // Initial indeterminate progress bar (need to poll)
+        env.call_method(
+            &builder,
+            jni_str!("setProgress"),
+            jni_sig!("(IIZ)Landroid/app/Notification$Builder;"),
+            &[JValue::Int(0), JValue::Int(0), JValue::Bool(true)],
+        )?;
+
         let notif = env
             .call_method(
                 &builder,
@@ -167,7 +176,7 @@ pub extern "system" fn Java_org_mlm_retorrent_TorrentService_nativeOnDestroy<'lo
     .resolve::<ThrowRuntimeExAndDefault>()
 }
 
-pub fn update_notification(title: &str, text: &str) {
+pub fn update_notification(title: &str, text: &str, progress: f64) {
     let ctx_global = match SERVICE_GLOBAL.get() {
         Some(r) => r,
         None => return,
@@ -176,19 +185,9 @@ pub fn update_notification(title: &str, text: &str) {
     let _ = jni_min_helper::jni_with_env(|env| -> errors::Result<()> {
         let svc = unsafe { JObject::from_raw(env, ctx_global.as_raw()) };
 
-        let s_notification = jstr(env, "notification")?;
         let s_channel_id = jstr(env, "retorrent_downloads")?;
         let s_title = jstr(env, title)?;
         let s_text = jstr(env, text)?;
-
-        let manager = env
-            .call_method(
-                &svc,
-                jni_str!("getSystemService"),
-                jni_sig!("(Ljava/lang/String;)Ljava/lang/Object;"),
-                &[JValue::from(&s_notification)],
-            )?
-            .l()?;
 
         let builder = env.new_object(
             jni_str!("android/app/Notification$Builder"),
@@ -219,6 +218,72 @@ pub fn update_notification(title: &str, text: &str) {
             jni_sig!("(Z)Landroid/app/Notification$Builder;"),
             &[JValue::Bool(true)],
         )?;
+
+        let progress_int = (progress.clamp(0.0, 1.0) * 1000.0) as i32;
+
+        if jni_min_helper::android_api_level() >= 36 {
+            if let Ok(progress_style) = env.new_object(
+                jni_str!("android/app/Notification$ProgressStyle"),
+                jni_sig!("()V"),
+                &[],
+            ) {
+                if progress_int > 0 {
+                    if let Ok(segment) = env.new_object(
+                        jni_str!("android/app/Notification$ProgressStyle$Segment"),
+                        jni_sig!("(I)V"),
+                        &[JValue::Int(progress_int)],
+                    ) {
+                        let _ = env.call_method(
+                            &progress_style,
+                            jni_str!("addProgressSegment"),
+                            jni_sig!("(Landroid/app/Notification$ProgressStyle$Segment;)Landroid/app/Notification$ProgressStyle;"),
+                            &[JValue::from(&segment)],
+                        );
+                    }
+                }
+                if progress_int < 1000 {
+                    let remaining = 1000 - progress_int;
+                    if let Ok(segment) = env.new_object(
+                        jni_str!("android/app/Notification$ProgressStyle$Segment"),
+                        jni_sig!("(I)V"),
+                        &[JValue::Int(remaining)],
+                    ) {
+                        let _ = env.call_method(
+                            &progress_style,
+                            jni_str!("addProgressSegment"),
+                            jni_sig!("(Landroid/app/Notification$ProgressStyle$Segment;)Landroid/app/Notification$ProgressStyle;"),
+                            &[JValue::from(&segment)],
+                        );
+                    }
+                }
+                let _ = env.call_method(
+                    &progress_style,
+                    jni_str!("setProgress"),
+                    jni_sig!("(I)Landroid/app/Notification$ProgressStyle;"),
+                    &[JValue::Int(progress_int)],
+                );
+                let _ = env.call_method(
+                    &builder,
+                    jni_str!("setStyle"),
+                    jni_sig!(
+                        "(Landroid/app/Notification$Style;)Landroid/app/Notification$Builder;"
+                    ),
+                    &[JValue::from(&progress_style)],
+                );
+            }
+        } else {
+            env.call_method(
+                &builder,
+                jni_str!("setProgress"),
+                jni_sig!("(IIZ)Landroid/app/Notification$Builder;"),
+                &[
+                    JValue::Int(1000),
+                    JValue::Int(progress_int),
+                    JValue::Bool(false),
+                ],
+            )?;
+        }
+
         let notif = env
             .call_method(
                 &builder,
@@ -229,8 +294,8 @@ pub fn update_notification(title: &str, text: &str) {
             .l()?;
 
         env.call_method(
-            &manager,
-            jni_str!("notify"),
+            &svc,
+            jni_str!("startForeground"),
             jni_sig!("(ILandroid/app/Notification;)V"),
             &[JValue::Int(1), JValue::from(&notif)],
         )?;
@@ -349,4 +414,24 @@ pub extern "system" fn Java_org_mlm_retorrent_RetorrentActivity_nativeOnNewInten
         Ok(())
     })
     .resolve::<ThrowRuntimeExAndDefault>()
+}
+
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_org_mlm_retorrent_RetorrentActivity_nativeOnWindowInsets<'local>(
+    _env: jni::EnvUnowned<'local>,
+    _class: jni::sys::jclass,
+    top_px: jni::sys::jfloat,
+    bottom_px: jni::sys::jfloat,
+    left_px: jni::sys::jfloat,
+    right_px: jni::sys::jfloat,
+    ime_bottom_px: jni::sys::jfloat,
+) {
+    let insets = repose_core::locals::WindowInsets {
+        top: top_px,
+        bottom: bottom_px,
+        left: left_px,
+        right: right_px,
+        ime_bottom: ime_bottom_px,
+    };
+    repose_core::locals::set_window_insets_default(insets);
 }
