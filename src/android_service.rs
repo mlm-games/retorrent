@@ -27,7 +27,7 @@ fn jstr<'local>(env: &mut Env<'local>, s: &str) -> errors::Result<JString<'local
 }
 
 #[unsafe(no_mangle)]
-pub extern "system" fn Java_dev_mlm_retorrent_TorrentService_nativeOnCreate<'local>(
+pub extern "system" fn Java_org_mlm_retorrent_TorrentService_nativeOnCreate<'local>(
     mut env: jni::EnvUnowned<'local>,
     _class: jni::sys::jclass,
     context: JObject<'local>,
@@ -145,7 +145,7 @@ pub extern "system" fn Java_dev_mlm_retorrent_TorrentService_nativeOnCreate<'loc
 }
 
 #[unsafe(no_mangle)]
-pub extern "system" fn Java_dev_mlm_retorrent_TorrentService_nativeOnDestroy<'local>(
+pub extern "system" fn Java_org_mlm_retorrent_TorrentService_nativeOnDestroy<'local>(
     mut env: jni::EnvUnowned<'local>,
     _class: jni::sys::jclass,
 ) {
@@ -313,7 +313,7 @@ pub fn queue_torrent_bytes(bytes: Vec<u8>) {
 }
 
 #[unsafe(no_mangle)]
-pub extern "system" fn Java_dev_mlm_retorrent_TorrentService_nativeOnTorrentData<'local>(
+pub extern "system" fn Java_org_mlm_retorrent_TorrentService_nativeOnTorrentData<'local>(
     mut env: jni::EnvUnowned<'local>,
     _class: jni::sys::jclass,
     data: jbyteArray,
@@ -333,7 +333,7 @@ pub fn drain_pending_intents() -> Vec<PendingTorrent> {
 }
 
 #[unsafe(no_mangle)]
-pub extern "system" fn Java_dev_mlm_retorrent_RetorrentActivity_nativeOnNewIntent<'local>(
+pub extern "system" fn Java_org_mlm_retorrent_RetorrentActivity_nativeOnNewIntent<'local>(
     mut env: jni::EnvUnowned<'local>,
     _class: jni::sys::jclass,
     data: jbyteArray,
