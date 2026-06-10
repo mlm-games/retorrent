@@ -2254,7 +2254,7 @@ fn add_torrent_dialog_view(
                 )),
             );
             body.push(Box(Modifier::new().height(10.0)));
-            body.push(Text(&name).size(13.0).color(th.on_surface_variant));
+            body.push(Text(&name).size(13.0).color(th.on_surface_variant).overflow_ellipsize());
             body.push(
                 Text(format!(
                     "{} \u{00B7} {}",
@@ -2338,7 +2338,7 @@ fn add_torrent_dialog_view(
                 )),
             );
 
-            Column(Modifier::new().padding(20.0).min_width(560.0)).child(body)
+            Column(Modifier::new().padding(20.0).min_width(360.0)).child(body)
         } else {
             Box(Modifier::new().size(0.0, 0.0))
         }
@@ -2349,7 +2349,7 @@ fn add_torrent_dialog_view(
     Dialog(
         state.clone(),
         overlay,
-        Modifier::new().max_width(620.0).max_height(560.0),
+        Modifier::new().max_width(500.0).max_height(560.0),
         content,
     )
 }
@@ -2392,8 +2392,8 @@ fn add_file_row_view(
             }
         }),
         Column(Modifier::new().flex_grow(1.0)).child((
-            Text(display_name).size(12.0).color(th.on_surface),
-            Text(full_path).size(10.0).color(th.on_surface_variant),
+            Text(display_name).size(12.0).color(th.on_surface).overflow_ellipsize(),
+            Text(full_path).size(10.0).color(th.on_surface_variant).overflow_ellipsize(),
         )),
         Text(size_text).size(11.0).color(th.on_surface_variant),
     ))
