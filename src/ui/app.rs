@@ -480,6 +480,7 @@ fn top_bar_view(
     .child({
         let mut children: Vec<View> = Vec::new();
 
+        #[cfg(not(target_os = "android"))]
         children.push(
             Row(Modifier::new().align_items(AlignItems::Center)).child((
                 Surface(
@@ -505,12 +506,15 @@ fn top_bar_view(
 
         children.push(Box(Modifier::new().width(24.0)));
 
+        #[cfg(not(target_os = "android"))]
         children.push(stat_pill(
             Symbols::DOWNLOAD,
             format_speed(global_dl),
             theme::downloading(),
         ));
+        #[cfg(not(target_os = "android"))]
         children.push(Box(Modifier::new().width(8.0)));
+        #[cfg(not(target_os = "android"))]
         children.push(stat_pill(
             Symbols::UPLOAD,
             format_speed(global_ul),
@@ -1923,6 +1927,7 @@ fn settings_dialog_view(
                             c.set(nc);
                         })
                     }));
+                    #[cfg(not(target_os = "android"))]
                     views.push(switch_row("Minimize on launch", cfg.minimize_to_tray, {
                         let c = config.clone();
                         Rc::new(move |v| {
