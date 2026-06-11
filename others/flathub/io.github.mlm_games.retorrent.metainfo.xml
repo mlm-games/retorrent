@@ -7,7 +7,7 @@
     <name>MLM Games</name>
   </developer>
   <metadata_license>CC0-1.0</metadata_license>
-  <project_license>GPL-3.0-or-later</project_license>
+  <project_license>AGPL-3.0-or-later</project_license>
   <description>
     <p>
       A lightweight BitTorrent client built with Rust.

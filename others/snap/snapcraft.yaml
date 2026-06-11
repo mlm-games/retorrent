@@ -10,7 +10,7 @@ grade: stable
 confinement: strict
 
 title: Retorrent
-license: GPL-3.0
+license: AGPL-3.0
 contact: https://github.com/mlm-games/retorrent/issues
 website: https://github.com/mlm-games/retorrent
 source-code: https://github.com/mlm-games/retorrent
