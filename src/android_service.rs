@@ -140,7 +140,13 @@ pub extern "system" fn Java_org_mlm_retorrent_TorrentService_nativeOnCreate<'loc
                 &[JValue::Int(1), JValue::from(&s_wakelock)],
             )?
             .l()?;
-        env.call_method(&wl, jni_str!("acquire"), jni_sig!("()V"), &[])?;
+        const TEN_MINUTES: i64 = 10 * 60 * 1000;
+        env.call_method(
+            &wl,
+            jni_str!("acquire"),
+            jni_sig!("(J)V"),
+            &[JValue::Long(TEN_MINUTES)],
+        )?;
         let wl_global = env.new_global_ref(&wl)?;
         WAKE_LOCK
             .get_or_init(|| Mutex::new(None))
@@ -185,121 +191,123 @@ pub fn update_notification(title: &str, text: &str, progress: f64) {
     let _ = jni_min_helper::jni_with_env(|env| -> errors::Result<()> {
         let svc = unsafe { JObject::from_raw(env, ctx_global.as_raw()) };
 
-        let s_channel_id = jstr(env, "retorrent_downloads")?;
-        let s_title = jstr(env, title)?;
-        let s_text = jstr(env, text)?;
+        env.with_local_frame(16, |env| {
+            let s_channel_id = jstr(env, "retorrent_downloads")?;
+            let s_title = jstr(env, title)?;
+            let s_text = jstr(env, text)?;
 
-        let builder = env.new_object(
-            jni_str!("android/app/Notification$Builder"),
-            jni_sig!("(Landroid/content/Context;Ljava/lang/String;)V"),
-            &[JValue::from(&svc), JValue::from(&s_channel_id)],
-        )?;
-        env.call_method(
-            &builder,
-            jni_str!("setContentTitle"),
-            jni_sig!("(Ljava/lang/CharSequence;)Landroid/app/Notification$Builder;"),
-            &[JValue::from(&s_title)],
-        )?;
-        env.call_method(
-            &builder,
-            jni_str!("setContentText"),
-            jni_sig!("(Ljava/lang/CharSequence;)Landroid/app/Notification$Builder;"),
-            &[JValue::from(&s_text)],
-        )?;
-        env.call_method(
-            &builder,
-            jni_str!("setSmallIcon"),
-            jni_sig!("(I)Landroid/app/Notification$Builder;"),
-            &[JValue::Int(STAT_SYS_DOWNLOAD)],
-        )?;
-        env.call_method(
-            &builder,
-            jni_str!("setOngoing"),
-            jni_sig!("(Z)Landroid/app/Notification$Builder;"),
-            &[JValue::Bool(true)],
-        )?;
-
-        let progress_int = (progress.clamp(0.0, 1.0) * 1000.0) as i32;
-
-        if jni_min_helper::android_api_level() >= 36 {
-            if let Ok(progress_style) = env.new_object(
-                jni_str!("android/app/Notification$ProgressStyle"),
-                jni_sig!("()V"),
-                &[],
-            ) {
-                if progress_int > 0 {
-                    if let Ok(segment) = env.new_object(
-                        jni_str!("android/app/Notification$ProgressStyle$Segment"),
-                        jni_sig!("(I)V"),
-                        &[JValue::Int(progress_int)],
-                    ) {
-                        let _ = env.call_method(
-                            &progress_style,
-                            jni_str!("addProgressSegment"),
-                            jni_sig!("(Landroid/app/Notification$ProgressStyle$Segment;)Landroid/app/Notification$ProgressStyle;"),
-                            &[JValue::from(&segment)],
-                        );
-                    }
-                }
-                if progress_int < 1000 {
-                    let remaining = 1000 - progress_int;
-                    if let Ok(segment) = env.new_object(
-                        jni_str!("android/app/Notification$ProgressStyle$Segment"),
-                        jni_sig!("(I)V"),
-                        &[JValue::Int(remaining)],
-                    ) {
-                        let _ = env.call_method(
-                            &progress_style,
-                            jni_str!("addProgressSegment"),
-                            jni_sig!("(Landroid/app/Notification$ProgressStyle$Segment;)Landroid/app/Notification$ProgressStyle;"),
-                            &[JValue::from(&segment)],
-                        );
-                    }
-                }
-                let _ = env.call_method(
-                    &progress_style,
-                    jni_str!("setProgress"),
-                    jni_sig!("(I)Landroid/app/Notification$ProgressStyle;"),
-                    &[JValue::Int(progress_int)],
-                );
-                let _ = env.call_method(
-                    &builder,
-                    jni_str!("setStyle"),
-                    jni_sig!(
-                        "(Landroid/app/Notification$Style;)Landroid/app/Notification$Builder;"
-                    ),
-                    &[JValue::from(&progress_style)],
-                );
-            }
-        } else {
+            let builder = env.new_object(
+                jni_str!("android/app/Notification$Builder"),
+                jni_sig!("(Landroid/content/Context;Ljava/lang/String;)V"),
+                &[JValue::from(&svc), JValue::from(&s_channel_id)],
+            )?;
             env.call_method(
                 &builder,
-                jni_str!("setProgress"),
-                jni_sig!("(IIZ)Landroid/app/Notification$Builder;"),
-                &[
-                    JValue::Int(1000),
-                    JValue::Int(progress_int),
-                    JValue::Bool(false),
-                ],
+                jni_str!("setContentTitle"),
+                jni_sig!("(Ljava/lang/CharSequence;)Landroid/app/Notification$Builder;"),
+                &[JValue::from(&s_title)],
             )?;
-        }
-
-        let notif = env
-            .call_method(
+            env.call_method(
                 &builder,
-                jni_str!("build"),
-                jni_sig!("()Landroid/app/Notification;"),
-                &[],
-            )?
-            .l()?;
+                jni_str!("setContentText"),
+                jni_sig!("(Ljava/lang/CharSequence;)Landroid/app/Notification$Builder;"),
+                &[JValue::from(&s_text)],
+            )?;
+            env.call_method(
+                &builder,
+                jni_str!("setSmallIcon"),
+                jni_sig!("(I)Landroid/app/Notification$Builder;"),
+                &[JValue::Int(STAT_SYS_DOWNLOAD)],
+            )?;
+            env.call_method(
+                &builder,
+                jni_str!("setOngoing"),
+                jni_sig!("(Z)Landroid/app/Notification$Builder;"),
+                &[JValue::Bool(true)],
+            )?;
 
-        env.call_method(
-            &svc,
-            jni_str!("startForeground"),
-            jni_sig!("(ILandroid/app/Notification;)V"),
-            &[JValue::Int(1), JValue::from(&notif)],
-        )?;
-        Ok(())
+            let progress_int = (progress.clamp(0.0, 1.0) * 1000.0) as i32;
+
+            if jni_min_helper::android_api_level() >= 36 {
+                if let Ok(progress_style) = env.new_object(
+                    jni_str!("android/app/Notification$ProgressStyle"),
+                    jni_sig!("()V"),
+                    &[],
+                ) {
+                    if progress_int > 0 {
+                        if let Ok(segment) = env.new_object(
+                            jni_str!("android/app/Notification$ProgressStyle$Segment"),
+                            jni_sig!("(I)V"),
+                            &[JValue::Int(progress_int)],
+                        ) {
+                            let _ = env.call_method(
+                                &progress_style,
+                                jni_str!("addProgressSegment"),
+                                jni_sig!("(Landroid/app/Notification$ProgressStyle$Segment;)Landroid/app/Notification$ProgressStyle;"),
+                                &[JValue::from(&segment)],
+                            );
+                        }
+                    }
+                    if progress_int < 1000 {
+                        let remaining = 1000 - progress_int;
+                        if let Ok(segment) = env.new_object(
+                            jni_str!("android/app/Notification$ProgressStyle$Segment"),
+                            jni_sig!("(I)V"),
+                            &[JValue::Int(remaining)],
+                        ) {
+                            let _ = env.call_method(
+                                &progress_style,
+                                jni_str!("addProgressSegment"),
+                                jni_sig!("(Landroid/app/Notification$ProgressStyle$Segment;)Landroid/app/Notification$ProgressStyle;"),
+                                &[JValue::from(&segment)],
+                            );
+                        }
+                    }
+                    let _ = env.call_method(
+                        &progress_style,
+                        jni_str!("setProgress"),
+                        jni_sig!("(I)Landroid/app/Notification$ProgressStyle;"),
+                        &[JValue::Int(progress_int)],
+                    );
+                    let _ = env.call_method(
+                        &builder,
+                        jni_str!("setStyle"),
+                        jni_sig!(
+                            "(Landroid/app/Notification$Style;)Landroid/app/Notification$Builder;"
+                        ),
+                        &[JValue::from(&progress_style)],
+                    );
+                }
+            } else {
+                env.call_method(
+                    &builder,
+                    jni_str!("setProgress"),
+                    jni_sig!("(IIZ)Landroid/app/Notification$Builder;"),
+                    &[
+                        JValue::Int(1000),
+                        JValue::Int(progress_int),
+                        JValue::Bool(false),
+                    ],
+                )?;
+            }
+
+            let notif = env
+                .call_method(
+                    &builder,
+                    jni_str!("build"),
+                    jni_sig!("()Landroid/app/Notification;"),
+                    &[],
+                )?
+                .l()?;
+
+            env.call_method(
+                &svc,
+                jni_str!("startForeground"),
+                jni_sig!("(ILandroid/app/Notification;)V"),
+                &[JValue::Int(1), JValue::from(&notif)],
+            )?;
+            Ok(())
+        })
     });
 }
 
@@ -338,7 +346,13 @@ pub fn acquire_wake_lock_if_needed() {
                 &[JValue::Int(1), JValue::from(&s_wakelock)],
             )?
             .l()?;
-        env.call_method(&wl, jni_str!("acquire"), jni_sig!("()V"), &[])?;
+        const TEN_MINUTES: i64 = 10 * 60 * 1000;
+        env.call_method(
+            &wl,
+            jni_str!("acquire"),
+            jni_sig!("(J)V"),
+            &[JValue::Long(TEN_MINUTES)],
+        )?;
         let wl_global = env.new_global_ref(&wl)?;
         guard.replace(wl_global);
         Ok(())
