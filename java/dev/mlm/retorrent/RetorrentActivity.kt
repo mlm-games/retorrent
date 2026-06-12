@@ -59,10 +59,41 @@ class RetorrentActivity : NativeActivity() {
 
     private fun savePendingIntent(data: ByteArray) {
         try {
-            openFileOutput(PENDING_INTENT_FILE, MODE_PRIVATE).use { it.write(data) }
+            val tmp = java.io.File(filesDir, "$PENDING_INTENT_FILE.tmp")
+            val dst = java.io.File(filesDir, PENDING_INTENT_FILE)
+
+            tmp.writeBytes(data)
+
+            if (!tmp.renameTo(dst)) {
+                throw java.io.IOException("rename failed")
+            }
+
             Log.i(TAG, "savePendingIntent: saved ${data.size} bytes")
         } catch (e: Exception) {
-            Log.e(TAG, "savePendingIntent failed: ${e.message}", e)
+            Log.e(TAG, "savePendingIntent failed", e)
+        }
+    }
+
+    private fun readTorrentBytes(uri: android.net.Uri): ByteArray? {
+        val maxBytes = 32 * 1024 * 1024
+        return contentResolver.openInputStream(uri)?.use { input ->
+            val out = java.io.ByteArrayOutputStream()
+            val buf = ByteArray(16 * 1024)
+            var total = 0
+
+            while (true) {
+                val n = input.read(buf)
+                if (n < 0) break
+                total += n
+                if (total > maxBytes) {
+                    throw IllegalArgumentException(
+                        "Torrent file too large (max ${maxBytes / (1024 * 1024)} MiB)"
+                    )
+                }
+                out.write(buf, 0, n)
+            }
+
+            out.toByteArray()
         }
     }
 
@@ -73,7 +104,7 @@ class RetorrentActivity : NativeActivity() {
         Log.i(TAG, "intentToBytes scheme=${uri.scheme} uri=$uri")
         if (uri.scheme == "magnet") return uri.toString().toByteArray(StandardCharsets.UTF_8)
         return try {
-            contentResolver.openInputStream(uri)?.use { it.readBytes() }
+            readTorrentBytes(uri)
         } catch (e: Exception) {
             Log.e(TAG, "intentToBytes failed: ${e.message}", e)
             null

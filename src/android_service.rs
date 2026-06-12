@@ -117,12 +117,21 @@ pub extern "system" fn Java_org_mlm_retorrent_TorrentService_nativeOnCreate<'loc
             )?
             .l()?;
 
-        env.call_method(
-            &context,
-            jni_str!("startForeground"),
-            jni_sig!("(ILandroid/app/Notification;)V"),
-            &[JValue::Int(1), JValue::from(&notif)],
-        )?;
+        if jni_min_helper::android_api_level() >= 29 {
+            env.call_method(
+                &context,
+                jni_str!("startForeground"),
+                jni_sig!("(ILandroid/app/Notification;I)V"),
+                &[JValue::Int(1), JValue::from(&notif), JValue::Int(2)],
+            )?;
+        } else {
+            env.call_method(
+                &context,
+                jni_str!("startForeground"),
+                jni_sig!("(ILandroid/app/Notification;)V"),
+                &[JValue::Int(1), JValue::from(&notif)],
+            )?;
+        }
 
         let power = env
             .call_method(
@@ -300,12 +309,21 @@ pub fn update_notification(title: &str, text: &str, progress: f64) {
                 )?
                 .l()?;
 
-            env.call_method(
-                &svc,
-                jni_str!("startForeground"),
-                jni_sig!("(ILandroid/app/Notification;)V"),
-                &[JValue::Int(1), JValue::from(&notif)],
-            )?;
+            if jni_min_helper::android_api_level() >= 29 {
+                env.call_method(
+                    &svc,
+                    jni_str!("startForeground"),
+                    jni_sig!("(ILandroid/app/Notification;I)V"),
+                    &[JValue::Int(1), JValue::from(&notif), JValue::Int(2)],
+                )?;
+            } else {
+                env.call_method(
+                    &svc,
+                    jni_str!("startForeground"),
+                    jni_sig!("(ILandroid/app/Notification;)V"),
+                    &[JValue::Int(1), JValue::from(&notif)],
+                )?;
+            }
             Ok(())
         })
     });
@@ -372,6 +390,21 @@ pub fn release_wake_lock_if_held() {
             Ok::<_, errors::Error>(())
         });
     }
+}
+
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_org_mlm_retorrent_TorrentService_nativeOnForegroundServiceTimeout<'local>(
+    mut env: jni::EnvUnowned<'local>,
+    _class: jni::sys::jclass,
+) {
+    env.with_env(|_env| -> errors::Result<()> {
+        if let Some(engine) = ENGINE.get() {
+            engine.save_all_resume();
+        }
+        tracing::warn!("Android foreground service timeout; saved resume data");
+        Ok(())
+    })
+    .resolve::<ThrowRuntimeExAndDefault>()
 }
 
 pub fn queue_torrent_bytes(bytes: Vec<u8>) {

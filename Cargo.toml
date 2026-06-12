@@ -94,7 +94,7 @@ scheme = "magnet"
 [[package.metadata.android.application.service]]
 name = "org.mlm.retorrent.TorrentService"
 foreground_service_type = "dataSync"
-exported = true
+exported = false
 
 [dependencies]
 futures = "0.3"
