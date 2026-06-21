@@ -10,7 +10,8 @@ use repose_core::modifier::{PaddingValues, StateColors};
 use repose_core::prelude::*;
 use repose_material::material3::dialog::{Dialog, DialogState};
 use repose_material::material3::{
-    self, Checkbox, FilledButton, FilledTonalButton, IconButton, Switch, TabRow, TextButton,
+    self, ButtonConfig, Checkbox, CheckboxConfig, ChipConfig, FilledButton, FilledTonalButton,
+    IconButton, IconButtonConfig, Switch, SwitchConfig, TabRow, TabRowConfig, TextButton,
 };
 use repose_ui::overlay::OverlayHandle;
 use repose_ui::scroll::{ScrollArea, remember_scroll_state};
@@ -575,6 +576,7 @@ fn top_bar_view(
                     });
                 }
             },
+            ButtonConfig::default(),
             || {
                 Row(Modifier::new().align_items(AlignItems::Center)).child((
                     icon(Symbols::FOLDER_OPEN, 18.0, th.on_primary),
@@ -592,6 +594,7 @@ fn top_bar_view(
                 let s = magnet_state.clone();
                 move || s.show()
             },
+            ButtonConfig::default(),
             || {
                 Row(Modifier::new().align_items(AlignItems::Center)).child((
                     icon(Symbols::LINK, 18.0, th.on_surface),
@@ -611,6 +614,7 @@ fn top_bar_view(
                     s.show();
                 }
             },
+            ButtonConfig::default(),
             || {
                 Row(Modifier::new().align_items(AlignItems::Center)).child((
                     icon(Symbols::PUBLIC, 18.0, th.on_surface),
@@ -633,6 +637,7 @@ fn top_bar_view(
                     }
                 }
             },
+            IconButtonConfig::default(),
         ));
 
         children.push(IconButton(
@@ -647,17 +652,22 @@ fn top_bar_view(
                     }
                 }
             },
+            IconButtonConfig::default(),
         ));
 
-        children.push(IconButton(icon(Symbols::DELETE, 20.0, th.error), {
-            let selected = selected.clone();
-            let s = remove_state.clone();
-            move || {
-                if selected.get().is_some() {
-                    s.show();
+        children.push(IconButton(
+            icon(Symbols::DELETE, 20.0, th.error),
+            {
+                let selected = selected.clone();
+                let s = remove_state.clone();
+                move || {
+                    if selected.get().is_some() {
+                        s.show();
+                    }
                 }
-            }
-        }));
+            },
+            IconButtonConfig::default(),
+        ));
 
         children.push(Box(Modifier::new().width(4.0)));
 
@@ -667,6 +677,7 @@ fn top_bar_view(
                 let s = settings_state.clone();
                 move || s.show()
             },
+            IconButtonConfig::default(),
         ));
 
         children
@@ -745,6 +756,7 @@ fn filter_search_panel(
                         Text(label).size(12.0),
                         Some(icon(sym, 16.0, th.on_surface_variant)),
                         None,
+                        ChipConfig::default(),
                     )
                 })
                 .collect::<Vec<_>>(),
@@ -1052,7 +1064,7 @@ fn details_tabs(active_tab: Rc<Signal<Tab>>) -> View {
         Tab::Pieces => 4,
     };
 
-    TabRow(active_idx, tabs)
+    TabRow(active_idx, tabs, TabRowConfig::default())
 }
 
 fn general_tab_view_v2(torrent: &TorrentRow) -> View {
@@ -1356,7 +1368,7 @@ fn pieces_tab_view(torrent: &TorrentRow) -> View {
         ScrollArea(
             Modifier::new().fill_max_width(),
             remember_scroll_state("pieces_tab"),
-            components::piece_map_view(&torrent.have_pieces, 600.0),
+            components::piece_map_view(&torrent.have_pieces),
         ),
     ))
 }
@@ -1402,6 +1414,7 @@ fn magnet_dialog_view(
                             s.dismiss();
                         }
                     },
+                    ButtonConfig::default(),
                     || Text("Cancel"),
                 ),
                 Box(Modifier::new().width(8.0)),
@@ -1425,6 +1438,7 @@ fn magnet_dialog_view(
                             s.dismiss();
                         }
                     },
+                    ButtonConfig::default(),
                     || Text("Add"),
                 ),
             )),
@@ -1474,6 +1488,7 @@ fn url_dialog_view(
                             s.dismiss();
                         }
                     },
+                    ButtonConfig::default(),
                     || Text("Cancel"),
                 ),
                 Box(Modifier::new().width(8.0)),
@@ -1527,6 +1542,7 @@ fn url_dialog_view(
                             s.dismiss();
                         }
                     },
+                    ButtonConfig::default(),
                     || Text("Fetch"),
                 ),
             )),
@@ -1555,10 +1571,14 @@ fn remove_dialog_view(
                 .color(th.on_surface_variant),
             Box(Modifier::new().height(12.0)),
             Row(Modifier::new().align_items(AlignItems::Center)).child((
-                Checkbox(remove_delete_files.get(), {
-                    let d = remove_delete_files.clone();
-                    move |v| d.set(v)
-                }),
+                Checkbox(
+                    remove_delete_files.get(),
+                    {
+                        let d = remove_delete_files.clone();
+                        move |v| d.set(v)
+                    },
+                    CheckboxConfig::default(),
+                ),
                 Text("  Also delete downloaded files")
                     .size(13.0)
                     .color(th.on_surface),
@@ -1578,6 +1598,7 @@ fn remove_dialog_view(
                             s.dismiss();
                         }
                     },
+                    ButtonConfig::default(),
                     || Text("Cancel"),
                 ),
                 Box(Modifier::new().width(8.0)),
@@ -1597,6 +1618,7 @@ fn remove_dialog_view(
                             s.dismiss();
                         }
                     },
+                    ButtonConfig::default(),
                     || Text("Remove"),
                 ),
             )),
@@ -1705,7 +1727,7 @@ fn settings_dialog_view(
                                 .size(12.0)
                                 .color(th.on_surface_variant)
                                 .modifier(Modifier::new().flex_grow(1.0)),
-                            Switch(val, move |v| on_toggle(v)),
+                            Switch(val, move |v| on_toggle(v), SwitchConfig::default()),
                         ))
                     };
 
@@ -1893,6 +1915,7 @@ fn settings_dialog_view(
                             s.dismiss();
                         }
                     },
+                    ButtonConfig::default(),
                     || Text("Cancel"),
                 ),
                 Box(Modifier::new().width(8.0)),
@@ -1953,6 +1976,7 @@ fn settings_dialog_view(
                             s.dismiss();
                         }
                     },
+                    ButtonConfig::default(),
                     || Text("Save"),
                 ),
             )),
@@ -2191,6 +2215,7 @@ fn add_torrent_dialog_view(
                     FilledTonalButton(
                         Modifier::new().height(36.0),
                         move || pick_folder(),
+                        ButtonConfig::default(),
                         || Text("Browse"),
                     ),
                 )),
@@ -2203,11 +2228,17 @@ fn add_torrent_dialog_view(
                 .child((
                     Text("Files:").size(12.0).color(th.on_surface_variant),
                     Spacer(),
-                    TextButton(Modifier::new(), move || select_all(), || Text("Select All")),
+                    TextButton(
+                        Modifier::new(),
+                        move || select_all(),
+                        ButtonConfig::default(),
+                        || Text("Select All"),
+                    ),
                     Box(Modifier::new().width(4.0)),
                     TextButton(
                         Modifier::new(),
                         move || select_none(),
+                        ButtonConfig::default(),
                         || Text("Select None"),
                     ),
                 )),
@@ -2231,9 +2262,19 @@ fn add_torrent_dialog_view(
                     .align_items(AlignItems::Center)
                     .justify_content(JustifyContent::End))
                 .child((
-                    TextButton(Modifier::new(), move || on_cancel(), || Text("Cancel")),
+                    TextButton(
+                        Modifier::new(),
+                        move || on_cancel(),
+                        ButtonConfig::default(),
+                        || Text("Cancel"),
+                    ),
                     Box(Modifier::new().width(8.0)),
-                    FilledButton(Modifier::new(), move || on_confirm(), || Text("Add")),
+                    FilledButton(
+                        Modifier::new(),
+                        move || on_confirm(),
+                        ButtonConfig::default(),
+                        || Text("Add"),
+                    ),
                 )),
             );
 
@@ -2280,16 +2321,20 @@ fn add_file_row_view(
         .column_gap(8.0)
         .align_items(AlignItems::Center))
     .child((
-        Checkbox(checked, {
-            let file_checks = file_checks.clone();
-            move |v| {
-                let mut cur = file_checks.get();
-                if index < cur.len() {
-                    cur[index] = v;
-                    file_checks.set(cur);
+        Checkbox(
+            checked,
+            {
+                let file_checks = file_checks.clone();
+                move |v| {
+                    let mut cur = file_checks.get();
+                    if index < cur.len() {
+                        cur[index] = v;
+                        file_checks.set(cur);
+                    }
                 }
-            }
-        }),
+            },
+            CheckboxConfig::default(),
+        ),
         Column(Modifier::new().flex_grow(1.0)).child((
             Text(display_name)
                 .size(12.0)

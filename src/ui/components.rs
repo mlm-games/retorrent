@@ -1,8 +1,12 @@
 use crate::types::TorrentState;
 use crate::ui::theme;
 use repose_core::prelude::*;
-use repose_material::material3::LinearProgressIndicator;
-use repose_ui::{Box, Column, Row, Text, TextStyle, ViewExt};
+use repose_material::material3::{
+    LinearProgressIndicator, LinearProgressIndicatorConfig,
+};
+use repose_ui::{
+    box_with_constraints_with_key, Box, Column, Row, Text, TextStyle, ViewExt,
+};
 
 pub fn state_color(state: TorrentState) -> Color {
     match state {
@@ -29,14 +33,22 @@ pub fn progress_bar_view(progress: f32, state: TorrentState) -> View {
             .child(Text(label).size(11.0).color(th.on_surface_variant)),
         LinearProgressIndicator(
             Some(progress.clamp(0.0, 1.0)),
-            Some(state_color(state)),
-            None, None, None,
+            LinearProgressIndicatorConfig {
+                color: state_color(state),
+                ..Default::default()
+            },
         ),
     ))
 }
 
 pub fn colored_progress_bar(progress: f32, color: Color) -> View {
-    LinearProgressIndicator(Some(progress.clamp(0.0, 1.0)), Some(color), None, None, None)
+    LinearProgressIndicator(
+        Some(progress.clamp(0.0, 1.0)),
+        LinearProgressIndicatorConfig {
+            color,
+            ..Default::default()
+        },
+    )
 }
 
 pub fn piece_map_view(have: &[bool], available_width: f32) -> View {
