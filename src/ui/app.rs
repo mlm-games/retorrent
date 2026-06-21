@@ -330,12 +330,10 @@ pub fn app(
     overlay.host(
         Modifier::new().fill_max_size(),
         ZStack(Modifier::new().fill_max_size()).child((
-            Surface(
-                Modifier::new()
-                    .fill_max_size()
-                    .background(theme().background),
-                content,
-            ),
+            Box(Modifier::new()
+                .fill_max_size()
+                .background(theme().background))
+            .child(content),
             magnet_dialog_view(
                 magnet_state.clone(),
                 (*overlay).clone(),
@@ -389,28 +387,24 @@ fn main_shell_view(
         .padding(12.0)
         .background(th.background))
     .child((
-        Surface(
-            Modifier::new()
-                .width(440.0)
-                .fill_max_height()
-                .background(th.surface_container_low)
-                .border(1.0, th.outline_variant, 18.0)
-                .clip_rounded(18.0),
-            Column(Modifier::new().fill_max_size()).child((
-                filter_search_panel(filter_state, search_query),
-                torrent_list_view(torrents, filtered_indices, selected),
-            )),
-        ),
+        Box(Modifier::new()
+            .width(440.0)
+            .fill_max_height()
+            .background(th.surface_container_low)
+            .border(1.0, th.outline_variant, 18.0)
+            .clip_rounded(18.0))
+        .child(Column(Modifier::new().fill_max_size()).child((
+            filter_search_panel(filter_state, search_query),
+            torrent_list_view(torrents, filtered_indices, selected),
+        ))),
         Box(Modifier::new().width(12.0)),
-        Surface(
-            Modifier::new()
-                .flex_grow(1.0)
-                .fill_max_height()
-                .background(th.surface_container)
-                .border(1.0, th.outline_variant, 18.0)
-                .clip_rounded(18.0),
-            details_panel_view_v2(selected_torrent, active_tab, engine),
-        ),
+        Box(Modifier::new()
+            .flex_grow(1.0)
+            .fill_max_height()
+            .background(th.surface_container)
+            .border(1.0, th.outline_variant, 18.0)
+            .clip_rounded(18.0))
+        .child(details_panel_view_v2(selected_torrent, active_tab, engine)),
     ))
 }
 
@@ -441,11 +435,11 @@ fn top_bar_view(
         #[cfg(not(target_os = "android"))]
         children.push(
             Row(Modifier::new().align_items(AlignItems::Center)).child((
-                Surface(
-                    Modifier::new()
-                        .size(44.0, 44.0)
-                        .background(th.primary_container)
-                        .clip_rounded(14.0),
+                Box(Modifier::new()
+                    .size(44.0, 44.0)
+                    .background(th.primary_container)
+                    .clip_rounded(14.0))
+                .child(
                     Box(Modifier::new()
                         .fill_max_size()
                         .align_items(AlignItems::Center)
@@ -682,24 +676,22 @@ fn top_bar_view(
 fn stat_pill(symbol: Symbol, value: String, color: Color) -> View {
     let th = theme();
 
-    Surface(
-        Modifier::new()
-            .height(34.0)
-            .background(th.surface_container_high)
-            .border(1.0, th.outline_variant, 17.0)
-            .clip_rounded(17.0)
-            .padding_values(PaddingValues {
-                left: 12.0,
-                right: 12.0,
-                top: 6.0,
-                bottom: 6.0,
-            }),
-        Row(Modifier::new().align_items(AlignItems::Center)).child((
-            icon(symbol, 17.0, color),
-            Box(Modifier::new().width(6.0)),
-            Text(value).size(12.0).color(th.on_surface),
-        )),
-    )
+    Box(Modifier::new()
+        .height(34.0)
+        .background(th.surface_container_high)
+        .border(1.0, th.outline_variant, 17.0)
+        .clip_rounded(17.0)
+        .padding_values(PaddingValues {
+            left: 12.0,
+            right: 12.0,
+            top: 6.0,
+            bottom: 6.0,
+        }))
+    .child(Row(Modifier::new().align_items(AlignItems::Center)).child((
+        icon(symbol, 17.0, color),
+        Box(Modifier::new().width(6.0)),
+        Text(value).size(12.0).color(th.on_surface),
+    )))
 }
 
 fn filter_search_panel(
@@ -832,37 +824,37 @@ fn torrent_card_view(
 
     let hash = torrent.info_hash;
 
-    Surface(
-        Modifier::new()
-            .fill_max_width()
-            .padding_values(PaddingValues {
-                left: 4.0,
-                right: 4.0,
-                top: 4.0,
-                bottom: 8.0,
-            })
-            .background(bg)
-            .border(
-                1.0,
-                if is_selected {
-                    th.primary
-                } else {
-                    th.outline_variant
-                },
-                16.0,
-            )
-            .clip_rounded(16.0)
-            .state_colors(StateColors {
-                default: bg,
-                hovered: th.surface_container_high,
-                pressed: th.primary_container.with_alpha(120),
-                disabled: bg,
-            })
-            .clickable()
-            .on_pointer_down({
-                let selected = selected.clone();
-                move |_| selected.set(Some(hash))
-            }),
+    Box(Modifier::new()
+        .fill_max_width()
+        .padding_values(PaddingValues {
+            left: 4.0,
+            right: 4.0,
+            top: 4.0,
+            bottom: 8.0,
+        })
+        .background(bg)
+        .border(
+            1.0,
+            if is_selected {
+                th.primary
+            } else {
+                th.outline_variant
+            },
+            16.0,
+        )
+        .clip_rounded(16.0)
+        .state_colors(StateColors {
+            default: bg,
+            hovered: th.surface_container_high,
+            pressed: th.primary_container.with_alpha(120),
+            disabled: bg,
+        })
+        .clickable()
+        .on_pointer_down({
+            let selected = selected.clone();
+            move |_| selected.set(Some(hash))
+        }))
+    .child(
         Row(Modifier::new().fill_max_width()).child((
             Box(Modifier::new()
                 .width(4.0)
@@ -882,7 +874,7 @@ fn torrent_card_view(
                         .color(th.on_surface_variant),
                 )),
                 Box(Modifier::new().height(8.0)),
-                components::progress_bar_view(torrent.display_progress, torrent.stats.state, 392.0),
+                components::progress_bar_view(torrent.display_progress, torrent.stats.state),
                 Box(Modifier::new().height(8.0)),
                 Row(Modifier::new()
                     .fill_max_width()
@@ -990,11 +982,11 @@ fn details_header(torrent: &TorrentRow) -> View {
             .fill_max_width()
             .align_items(AlignItems::Center))
         .child((
-            Surface(
-                Modifier::new()
-                    .size(46.0, 46.0)
-                    .background(state_color.with_alpha(45))
-                    .clip_rounded(14.0),
+            Box(Modifier::new()
+                .size(46.0, 46.0)
+                .background(state_color.with_alpha(45))
+                .clip_rounded(14.0))
+            .child(
                 Box(Modifier::new()
                     .fill_max_size()
                     .align_items(AlignItems::Center)
@@ -1025,7 +1017,7 @@ fn details_header(torrent: &TorrentRow) -> View {
             ),
         )),
         Box(Modifier::new().height(14.0)),
-        components::progress_bar_view(torrent.display_progress, torrent.stats.state, 640.0),
+        components::progress_bar_view(torrent.display_progress, torrent.stats.state),
     ))
 }
 
@@ -1149,90 +1141,65 @@ fn stat_card(
 ) -> View {
     let th = theme();
 
-    Surface(
-        Modifier::new()
-            .flex_grow(1.0)
-            .height(92.0)
-            .background(th.surface_container_high)
-            .border(1.0, th.outline_variant, 16.0)
-            .clip_rounded(16.0)
-            .padding(14.0),
-        Column(Modifier::new().fill_max_size()).child((
-            Row(Modifier::new().align_items(AlignItems::Center)).child((
-                icon(symbol, 18.0, color),
-                Box(Modifier::new().width(6.0)),
-                Text(label.into()).size(11.0).color(th.on_surface_variant),
-            )),
-            Spacer(),
-            Text(value.into()).size(17.0).color(th.on_surface),
+    Box(Modifier::new()
+        .flex_grow(1.0)
+        .height(92.0)
+        .background(th.surface_container_high)
+        .border(1.0, th.outline_variant, 16.0)
+        .clip_rounded(16.0)
+        .padding(14.0))
+    .child(Column(Modifier::new().fill_max_size()).child((
+        Row(Modifier::new().align_items(AlignItems::Center)).child((
+            icon(symbol, 18.0, color),
+            Box(Modifier::new().width(6.0)),
+            Text(label.into()).size(11.0).color(th.on_surface_variant),
         )),
-    )
+        Spacer(),
+        Text(value.into()).size(17.0).color(th.on_surface),
+    )))
 }
 
 fn info_section(title: &str, rows: Vec<(&str, String)>) -> View {
     let th = theme();
 
-    Surface(
-        Modifier::new()
-            .fill_max_width()
-            .background(th.surface_container_high)
-            .border(1.0, th.outline_variant, 16.0)
-            .clip_rounded(16.0)
-            .padding(16.0),
-        Column(Modifier::new().fill_max_width()).child({
-            let mut views: Vec<View> = vec![
-                Text(title).size(15.0).color(th.on_surface),
-                Box(Modifier::new().height(10.0)),
-            ];
+    Box(Modifier::new()
+        .fill_max_width()
+        .background(th.surface_container_high)
+        .border(1.0, th.outline_variant, 16.0)
+        .clip_rounded(16.0)
+        .padding(16.0))
+    .child(Column(Modifier::new().fill_max_width()).child({
+        let mut views: Vec<View> = vec![
+            Text(title).size(15.0).color(th.on_surface),
+            Box(Modifier::new().height(10.0)),
+        ];
 
-            for (label, value) in rows {
-                views.push(
-                    Row(Modifier::new()
-                        .fill_max_width()
-                        .padding_values(PaddingValues {
-                            left: 0.0,
-                            right: 0.0,
-                            top: 4.0,
-                            bottom: 4.0,
-                        }))
-                    .child((
-                        Text(label)
-                            .size(12.0)
-                            .color(th.on_surface_variant)
-                            .modifier(Modifier::new().width(130.0)),
-                        Text(value).size(12.0).color(th.on_surface),
-                    )),
-                );
-            }
+        for (label, value) in rows {
+            views.push(
+                Row(Modifier::new()
+                    .fill_max_width()
+                    .padding_values(PaddingValues {
+                        left: 0.0,
+                        right: 0.0,
+                        top: 4.0,
+                        bottom: 4.0,
+                    }))
+                .child((
+                    Text(label)
+                        .size(12.0)
+                        .color(th.on_surface_variant)
+                        .modifier(Modifier::new().width(130.0)),
+                    Text(value).size(12.0).color(th.on_surface),
+                )),
+            );
+        }
 
-            views
-        }),
-    )
+        views
+    }))
 }
 
 fn file_progress_view(progress: f32, state: TorrentState) -> View {
-    let fill_color = match state {
-        TorrentState::Downloading => theme::downloading(),
-        TorrentState::Seeding => theme::seeding(),
-        TorrentState::Paused => theme::paused(),
-        TorrentState::Complete => theme::success(),
-        TorrentState::Error => theme::error(),
-        TorrentState::FetchingMetadata => theme::warning(),
-        _ => theme::accent(),
-    };
-    let th = theme();
-    let p = progress.clamp(0.0, 1.0);
-
-    Row(Modifier::new().fill_max_size().height(8.0)).child((
-        Box(Modifier::new()
-            .flex_grow(p)
-            .fill_max_height()
-            .background(fill_color)),
-        Box(Modifier::new()
-            .flex_grow(1.0 - p)
-            .fill_max_height()
-            .background(th.surface_container_highest)),
-    ))
+    components::colored_progress_bar(progress, components::state_color(state))
 }
 
 fn files_tab_view(torrent: &TorrentRow, _info_hash: InfoHash, _engine: Arc<TorrentEngine>) -> View {
@@ -2245,19 +2212,19 @@ fn add_torrent_dialog_view(
                     ),
                 )),
             );
-            body.push(Surface(
-                Modifier::new()
+            body.push(
+                Box(Modifier::new()
                     .fill_max_width()
                     .height(220.0)
                     .background(th.surface_container_high)
                     .border(1.0, th.outline_variant, 10.0)
-                    .clip_rounded(10.0),
-                ScrollArea(
+                    .clip_rounded(10.0))
+                .child(ScrollArea(
                     Modifier::new().fill_max_size(),
                     remember_scroll_state("add_torrent_files"),
                     Column(Modifier::new().fill_max_width().padding(6.0)).child(file_rows),
-                ),
-            ));
+                )),
+            );
             body.push(Box(Modifier::new().height(16.0)));
             body.push(
                 Row(Modifier::new()

@@ -1,10 +1,11 @@
 use crate::types::TorrentState;
 use crate::ui::theme;
 use repose_core::prelude::*;
-use repose_ui::{Box, Column, Row, Text, TextStyle, ViewExt, ZStack};
+use repose_material::material3::LinearProgressIndicator;
+use repose_ui::{Box, Column, Row, Text, TextStyle, ViewExt};
 
-pub fn progress_bar_view(progress: f32, state: TorrentState, width: f32) -> View {
-    let fill_color = match state {
+pub fn state_color(state: TorrentState) -> Color {
+    match state {
         TorrentState::Downloading => theme::downloading(),
         TorrentState::Seeding => theme::seeding(),
         TorrentState::Paused => theme::paused(),
@@ -12,8 +13,10 @@ pub fn progress_bar_view(progress: f32, state: TorrentState, width: f32) -> View
         TorrentState::Error => theme::error(),
         TorrentState::FetchingMetadata => theme::warning(),
         _ => theme::accent(),
-    };
+    }
+}
 
+pub fn progress_bar_view(progress: f32, state: TorrentState) -> View {
     let th = theme();
     let label = if state == TorrentState::FetchingMetadata {
         "Fetching metadata".to_string()
@@ -21,25 +24,19 @@ pub fn progress_bar_view(progress: f32, state: TorrentState, width: f32) -> View
         format!("{:.1}%", progress * 100.0)
     };
 
-    let fill_pct = progress.clamp(0.0, 1.0);
-
-    ZStack(Modifier::new().width(width).height(10.0)).child((
-        Box(Modifier::new()
-            .fill_max_size()
-            .background(th.surface_container_highest)
-            .clip_rounded(5.0)),
-        Box(Modifier::new()
-            .width(width * fill_pct)
-            .height(10.0)
-            .background(fill_color)
-            .clip_rounded(5.0)),
-        Box(Modifier::new()
-            .fill_max_size()
-            .align_items(AlignItems::Center)
-            .justify_content(JustifyContent::Center)
-            .hit_passthrough())
-        .child(Text(label).size(9.0).color(Color::WHITE.with_alpha(210))),
+    Column(Modifier::new().fill_max_width()).child((
+        Row(Modifier::new().fill_max_width().height(16.0).align_items(AlignItems::Center))
+            .child(Text(label).size(11.0).color(th.on_surface_variant)),
+        LinearProgressIndicator(
+            Some(progress.clamp(0.0, 1.0)),
+            Some(state_color(state)),
+            None, None, None,
+        ),
     ))
+}
+
+pub fn colored_progress_bar(progress: f32, color: Color) -> View {
+    LinearProgressIndicator(Some(progress.clamp(0.0, 1.0)), Some(color), None, None, None)
 }
 
 pub fn piece_map_view(have: &[bool], available_width: f32) -> View {
