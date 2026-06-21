@@ -1351,13 +1351,7 @@ fn pieces_tab_view(torrent: &TorrentRow) -> View {
     let th = theme();
     let completed = torrent.have_pieces.iter().filter(|&&v| v).count();
 
-    Column(
-        Modifier::new()
-            .fill_max_width()
-            .min_height(200.0)
-            .padding(8.0),
-    )
-    .child((
+    Column(Modifier::new().fill_max_size().padding(8.0)).child((
         Text(format!(
             "Pieces: {} / {} completed",
             completed, torrent.num_pieces
@@ -1366,7 +1360,7 @@ fn pieces_tab_view(torrent: &TorrentRow) -> View {
         .color(th.on_surface),
         Box(Modifier::new().height(8.0)),
         ScrollArea(
-            Modifier::new().fill_max_width(),
+            Modifier::new().fill_max_width().flex_grow(1.0),
             remember_scroll_state("pieces_tab"),
             components::piece_map_view(&torrent.have_pieces),
         ),
