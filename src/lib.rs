@@ -119,22 +119,26 @@ pub fn run_desktop_main() -> Result<()> {
     }
 
     let mut skip_next = false;
-    let torrent_files: Vec<String> = args
-        .iter()
-        .skip(1)
-        .filter(|a| {
-            if skip_next {
-                skip_next = false;
-                return false;
-            }
-            if *a == "--download-dir" {
-                skip_next = true;
-                return false;
-            }
-            !a.starts_with("--")
-        })
-        .cloned()
-        .collect();
+    let mut torrent_files: Vec<String> = Vec::new();
+    let mut magnet_uris: Vec<String> = Vec::new();
+    for a in args.iter().skip(1) {
+        if skip_next {
+            skip_next = false;
+            continue;
+        }
+        if *a == "--download-dir" {
+            skip_next = true;
+            continue;
+        }
+        if a.starts_with("--") {
+            continue;
+        }
+        if a.starts_with("magnet:?") || a.starts_with("magnet:") {
+            magnet_uris.push(a.clone());
+        } else {
+            torrent_files.push(a.clone());
+        }
+    }
 
     let mut config = Config::load_or_default();
     if let Some(dir) = download_dir_arg {
@@ -174,6 +178,15 @@ pub fn run_desktop_main() -> Result<()> {
                 Err(e) => tracing::error!("Failed to parse {}: {}", path, e),
             },
             Err(e) => tracing::error!("Failed to read {}: {}", path, e),
+        }
+    }
+
+    for magnet in &magnet_uris {
+        match engine.add_torrent_from_magnet(magnet, None) {
+            Ok(hash) => {
+                engine.start_torrent(&hash, &rt);
+            }
+            Err(e) => tracing::error!("Failed to add magnet {}: {}", magnet, e),
         }
     }
 
