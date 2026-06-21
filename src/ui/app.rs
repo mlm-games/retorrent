@@ -324,12 +324,6 @@ pub fn app(
             selected_torrent,
             engine.clone(),
         ),
-        status_bar_view(
-            global_dl.get(),
-            global_ul.get(),
-            all_torrents.len(),
-            &engine,
-        ),
     ));
 
     // Wrap in overlay host so overlay entries (dialogs) are rendered
@@ -1397,40 +1391,6 @@ fn pieces_tab_view(torrent: &TorrentRow) -> View {
             remember_scroll_state("pieces_tab"),
             components::piece_map_view(&torrent.have_pieces, 600.0),
         ),
-    ))
-}
-
-fn status_bar_view(
-    global_dl: u64,
-    global_ul: u64,
-    torrent_count: usize,
-    engine: &TorrentEngine,
-) -> View {
-    let th = theme();
-    let port = engine.config_read().listen_port;
-
-    Row(Modifier::new()
-        .fill_max_width()
-        .height(24.0)
-        .padding(4.0)
-        .background(th.surface_container_low)
-        .align_items(AlignItems::Center))
-    .child((
-        Text(format!("Torrents: {}", torrent_count))
-            .size(11.0)
-            .color(th.on_surface_variant),
-        Box(Modifier::new().width(16.0)),
-        Text(format!("\u{2B07} {}", format_speed(global_dl)))
-            .size(11.0)
-            .color(theme::downloading()),
-        Box(Modifier::new().width(16.0)),
-        Text(format!("\u{2B06} {}", format_speed(global_ul)))
-            .size(11.0)
-            .color(theme::seeding()),
-        Spacer(),
-        Text(format!("Port: {}", port))
-            .size(11.0)
-            .color(th.on_surface_variant),
     ))
 }
 
