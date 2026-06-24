@@ -82,7 +82,7 @@ jobs:
           [Desktop Entry]
           Name=Retorrent
           Comment=A semi-modern BitTorrent client
-          Exec=${_pkgname} %F
+          Exec=${_pkgname} %U
           Icon=${_pkgname}
           Terminal=false
           Type=Application

@@ -136,7 +136,8 @@ pub fn run_desktop_main() -> Result<()> {
         if a.starts_with("magnet:?") || a.starts_with("magnet:") {
             magnet_uris.push(a.clone());
         } else {
-            torrent_files.push(a.clone());
+            let path = a.strip_prefix("file://").unwrap_or(a).to_string();
+            torrent_files.push(path);
         }
     }
 

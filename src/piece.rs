@@ -383,7 +383,7 @@ impl PieceManager {
     }
 
     pub fn is_complete(&self) -> bool {
-        self.completed_count() == self.num_pieces
+        self.num_pieces > 0 && self.completed_count() == self.num_pieces
     }
 
     pub fn have_bitfield(&self) -> Vec<u8> {

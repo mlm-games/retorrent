@@ -456,15 +456,6 @@ impl TorrentSession {
                 break;
             }
 
-            if self.meta.read().num_pieces() == 0 {
-                // Still fetching metadata — skip tracker announce.
-                tokio::select! {
-                    _ = tokio::time::sleep(Duration::from_secs(interval)) => {},
-                    _ = token.cancelled() => break,
-                }
-                continue;
-            }
-
             let total_size = self.meta.read().total_size;
             let progress = self.piece_manager.read().progress();
             let left = (total_size as f64 * (1.0f64 - progress as f64)) as u64;
