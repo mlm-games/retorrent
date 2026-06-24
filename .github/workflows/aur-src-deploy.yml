@@ -1,0 +1,91 @@
+name: Publish source package to AUR
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      version_name:
+        description: 'Version name (e.g., 0.2.8)'
+        required: true
+
+jobs:
+  update-aur:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Determine version
+        id: version
+        shell: bash
+        run: |
+          ver="${{ inputs.version_name || github.ref_name }}"
+          echo "version=${ver}" >> "$GITHUB_OUTPUT"
+
+      - name: Create PKGBUILD
+        shell: bash
+        run: |
+          set -euo pipefail
+          ver="${{ steps.version.outputs.version }}"
+          pkgver="${ver#v}"
+          mkdir -p aur-package
+          cat > aur-package/PKGBUILD <<'EOF'
+          # Maintainer: MLM-stuff <gfxoxinzh@mozmail.com>
+          pkgname=retorrent
+          pkgver={{PKGVER}}
+          pkgrel=1
+          pkgdesc="A BitTorrent client with an alpha/test UI, built in Rust"
+          arch=('x86_64' 'aarch64')
+          url="https://github.com/mlm-games/retorrent"
+          license=('AGPL3')
+          depends=('gtk3' 'glibc')
+          optdepends=('libappindicator-gtk3: system tray icon')
+          makedepends=('cargo' 'rust' 'pkg-config')
+          provides=('retorrent')
+          conflicts=('retorrent-bin')
+          options=('!lto')
+          source=("${pkgname}-${pkgver}.tar.gz::https://github.com/mlm-games/retorrent/archive/refs/tags/v${pkgver}.tar.gz")
+          sha256sums=('SKIP')
+
+          build() {
+            cd "${srcdir}/${pkgname}-${pkgver}"
+            cargo build --release --locked --features desktop-bin
+          }
+
+          package() {
+            cd "${srcdir}/${pkgname}-${pkgver}"
+            install -Dm755 "target/release/retorrent" "${pkgdir}/usr/bin/retorrent"
+
+            install -Dm644 /dev/stdin "${pkgdir}/usr/share/applications/retorrent.desktop" << DESKTOP_EOF
+          [Desktop Entry]
+          Name=Retorrent
+          Comment=A semi-modern BitTorrent client
+          Exec=retorrent %U
+          Icon=retorrent
+          Terminal=false
+          Type=Application
+          Categories=Network;FileTransfer;P2P;
+          MimeType=application/x-bittorrent;x-scheme-handler/magnet;
+          StartupNotify=true
+          DESKTOP_EOF
+
+            install -Dm644 "fastlane/metadata/android/en-US/images/icon.png" \
+              "${pkgdir}/usr/share/pixmaps/retorrent.png"
+            install -Dm644 "fastlane/metadata/android/en-US/images/icon.png" \
+              "${pkgdir}/usr/share/icons/hicolor/256x256/apps/retorrent.png"
+          }
+          EOF
+
+          sed -i "s/{{PKGVER}}/${pkgver}/g" aur-package/PKGBUILD
+
+      - name: Publish to AUR
+        uses: mlm-games/aur-deploy-action@master
+        with:
+          pkgname: retorrent
+          pkgbuild: aur-package/PKGBUILD
+          auto_pkgrel: 'true'
+          commit_username: MLM-stuff
+          commit_email: gfxoxinzh@mozmail.com
+          ssh_private_key: ${{ secrets.AUR_SSH_PRIVATE_KEY }}
+          commit_message: "Update to ${{ steps.version.outputs.version }}"

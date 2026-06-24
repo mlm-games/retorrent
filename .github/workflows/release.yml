@@ -241,7 +241,7 @@ jobs:
           echo "target=$T" >> "$GITHUB_OUTPUT"
 
       - name: Build (release)
-        run: cargo build --release --features desktop-bin --target ${{ steps.triple.outputs.target }}
+        run: cargo build --release --locked --features desktop-bin --target ${{ steps.triple.outputs.target }}
 
       - name: Package (tar.gz) [Linux/macOS]
         if: runner.os != 'Windows'
