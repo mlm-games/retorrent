@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
     inputs:
       version_name:
-        description: 'Version name (e.g., 0.2.8)'
+        description: "Version name (e.g., 0.2.8)"
         required: true
 
 jobs:
@@ -67,6 +67,7 @@ jobs:
           Type=Application
           Categories=Network;FileTransfer;P2P;
           MimeType=application/x-bittorrent;x-scheme-handler/magnet;
+          StartupWMClass=retorrent
           StartupNotify=true
           DESKTOP_EOF
 
@@ -84,7 +85,7 @@ jobs:
         with:
           pkgname: retorrent
           pkgbuild: aur-package/PKGBUILD
-          auto_pkgrel: 'true'
+          auto_pkgrel: "true"
           commit_username: MLM-stuff
           commit_email: gfxoxinzh@mozmail.com
           ssh_private_key: ${{ secrets.AUR_SSH_PRIVATE_KEY }}
