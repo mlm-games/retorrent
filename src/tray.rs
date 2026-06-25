@@ -1,7 +1,7 @@
 use std::sync::mpsc;
 
 use tray_icon::menu::{Menu, MenuEvent, MenuId, MenuItem, PredefinedMenuItem};
-use tray_icon::{Icon, TrayIconBuilder};
+use tray_icon::{Icon, MouseButton, TrayIconBuilder, TrayIconEvent};
 
 #[derive(Debug)]
 pub enum TrayCommand {
@@ -21,6 +21,7 @@ impl AppTray {
         let icon = create_icon();
         let menu = build_menu();
 
+        let cmd_tx = command_tx.clone();
         MenuEvent::set_event_handler(Some(move |event: MenuEvent| {
             let id = event.id();
             if id.as_ref() == TOGGLE_ID {
@@ -28,6 +29,19 @@ impl AppTray {
                 repose_platform::wake_event_loop();
             } else if id.as_ref() == QUIT_ID {
                 let _ = command_tx.send(TrayCommand::Quit);
+                repose_platform::wake_event_loop();
+            }
+        }));
+
+        TrayIconEvent::set_event_handler(Some(move |event: TrayIconEvent| {
+            if matches!(
+                event,
+                TrayIconEvent::Click {
+                    button: MouseButton::Left,
+                    ..
+                }
+            ) {
+                let _ = cmd_tx.send(TrayCommand::ToggleWindow);
                 repose_platform::wake_event_loop();
             }
         }));

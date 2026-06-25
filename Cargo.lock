@@ -4483,7 +4483,7 @@ dependencies = [
 [[package]]
 name = "tray-icon"
 version = "0.24.1"
-source = "git+https://github.com/mlm-games/tray-icon#4fe6b7696993f8c6564a42b9e83f14ad85b9efd1"
+source = "git+https://github.com/mlm-games/tray-icon#b5d22756341c12339482352bc1420dca06d30365"
 dependencies = [
  "crossbeam-channel",
  "muda",
