@@ -41,8 +41,6 @@ parts:
     source: ./builds/
     source-type: local
     stage-packages:
-      - libgtk-3-0
-      - libappindicator3-1
       - libpulse0
       - libglu1-mesa
       - libxcursor1

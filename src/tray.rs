@@ -1,5 +1,4 @@
 use std::sync::mpsc;
-use std::time::Duration;
 
 use tray_icon::menu::{Menu, MenuEvent, MenuId, MenuItem, PredefinedMenuItem};
 use tray_icon::{Icon, TrayIconBuilder};
@@ -14,89 +13,37 @@ const TOGGLE_ID: &str = "toggle";
 const QUIT_ID: &str = "quit";
 
 pub struct AppTray {
-    #[cfg(target_os = "linux")]
-    tooltip_tx: mpsc::Sender<String>,
-    #[cfg(not(target_os = "linux"))]
     icon: tray_icon::TrayIcon,
 }
 
 impl AppTray {
     pub fn new(command_tx: mpsc::Sender<TrayCommand>) -> Self {
         let icon = create_icon();
+        let menu = build_menu();
 
-        #[cfg(target_os = "linux")]
-        {
-            let (tooltip_tx, tooltip_rx) = mpsc::channel();
+        MenuEvent::set_event_handler(Some(move |event: MenuEvent| {
+            let id = event.id();
+            if id.as_ref() == TOGGLE_ID {
+                let _ = command_tx.send(TrayCommand::ToggleWindow);
+                repose_platform::wake_event_loop();
+            } else if id.as_ref() == QUIT_ID {
+                let _ = command_tx.send(TrayCommand::Quit);
+                repose_platform::wake_event_loop();
+            }
+        }));
 
-            std::thread::spawn(move || {
-                gtk::init().expect("GTK init failed");
+        let tray = TrayIconBuilder::new()
+            .with_menu(Box::new(menu))
+            .with_tooltip("Retorrent")
+            .with_icon(icon)
+            .build()
+            .unwrap();
 
-                let menu = build_menu();
-
-                let tray = TrayIconBuilder::new()
-                    .with_menu(Box::new(menu))
-                    .with_tooltip("Retorrent")
-                    .with_icon(icon)
-                    .build()
-                    .unwrap();
-
-                MenuEvent::set_event_handler(Some(move |event: MenuEvent| {
-                    let id = event.id();
-                    if id.as_ref() == TOGGLE_ID {
-                        let _ = command_tx.send(TrayCommand::ToggleWindow);
-                        repose_platform::wake_event_loop();
-                    } else if id.as_ref() == QUIT_ID {
-                        let _ = command_tx.send(TrayCommand::Quit);
-                        repose_platform::wake_event_loop();
-                    }
-                }));
-
-                gtk::glib::timeout_add_local(Duration::from_secs(1), move || {
-                    while let Ok(tip) = tooltip_rx.try_recv() {
-                        tray.set_tooltip(Some(&tip)).ok();
-                    }
-                    gtk::glib::ControlFlow::Continue
-                });
-
-                gtk::main();
-            });
-
-            Self { tooltip_tx }
-        }
-
-        #[cfg(not(target_os = "linux"))]
-        {
-            let menu = build_menu();
-
-            MenuEvent::set_event_handler(Some(move |event: MenuEvent| {
-                let id = event.id();
-                if id.as_ref() == TOGGLE_ID {
-                    let _ = command_tx.send(TrayCommand::ToggleWindow);
-                } else if id.as_ref() == QUIT_ID {
-                    let _ = command_tx.send(TrayCommand::Quit);
-                }
-            }));
-
-            let tray = TrayIconBuilder::new()
-                .with_menu(Box::new(menu))
-                .with_tooltip("Rust Torrent")
-                .with_icon(icon)
-                .build()
-                .unwrap();
-
-            Self { icon: tray }
-        }
+        Self { icon: tray }
     }
 
     pub fn set_tooltip(&self, text: &str) {
-        #[cfg(target_os = "linux")]
-        {
-            let _ = self.tooltip_tx.send(text.to_string());
-        }
-        #[cfg(not(target_os = "linux"))]
-        {
-            self.icon.set_tooltip(Some(text)).ok();
-        }
+        self.icon.set_tooltip(Some(text)).ok();
     }
 }
 

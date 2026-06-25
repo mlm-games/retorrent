@@ -39,8 +39,7 @@ jobs:
           arch=('x86_64' 'aarch64')
           url="https://github.com/mlm-games/retorrent"
           license=('AGPL3')
-          depends=('gtk3' 'glibc')
-          optdepends=('libappindicator-gtk3: system tray icon')
+          depends=('glibc')
           makedepends=('cargo' 'rust' 'pkg-config')
           provides=('retorrent')
           conflicts=('retorrent-bin')

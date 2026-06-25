@@ -153,13 +153,15 @@ tokio = { version = "1", features = ["full"] }
 open = "5"
 
 [target.'cfg(any(target_os = "linux", target_os = "windows", target_os = "macos"))'.dependencies]
-gtk = "0.18"
-tray-icon = { version = "0.24", default-features = false, features = ["gtk"] }
+tray-icon = { version = "0.24.1", default-features = false }
 image = { version = "0.25", default-features = false, features = ["png"] }
 
 
 [patch.crates-io]
 winit = { git = "https://github.com/mlm-games/winit", branch = "0.30.x-cpick" }
+tray-icon = { git = "https://github.com/mlm-games/tray-icon" }
+muda = { git = "https://github.com/mlm-games/muda" }
+
 # repose-platform = { path = "../repose/crates/repose-platform" }
 # repose-core = { path = "../repose/crates/repose-core" }
 
