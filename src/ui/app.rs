@@ -1,3 +1,4 @@
+use std::cell::RefCell;
 use std::path::PathBuf;
 use std::rc::Rc;
 use std::sync::{Arc, Mutex};
@@ -126,7 +127,7 @@ pub fn app(
     let torrents: Rc<Signal<Vec<TorrentRow>>> = remember(|| signal(Vec::new()));
     let global_dl: Rc<Signal<u64>> = remember(|| signal(0));
     let global_ul: Rc<Signal<u64>> = remember(|| signal(0));
-    let last_refresh: Rc<Signal<web_time::Instant>> = remember(|| signal(web_time::Instant::now()));
+    let last_refresh: Rc<RefCell<web_time::Instant>> = remember(|| RefCell::new(web_time::Instant::now()));
 
     let overlay = remember(|| OverlayHandle::new());
     let magnet_state = remember(|| DialogState::new());
@@ -185,7 +186,9 @@ pub fn app(
 
     // Periodic refresh
     let now = web_time::Instant::now();
-    if now.duration_since(last_refresh.get()) > web_time::Duration::from_millis(500) {
+    let elapsed = now.duration_since(*last_refresh.borrow()).as_millis();
+    tracing::trace!("app() called, timer_elapsed={}ms", elapsed);
+    if elapsed > 500 {
         let mut rows = Vec::new();
         let mut dl_total = 0u64;
         let mut ul_total = 0u64;
@@ -249,10 +252,30 @@ pub fn app(
                 });
             }
         }
-        torrents.set(rows);
-        global_dl.set(dl_total);
-        global_ul.set(ul_total);
-        last_refresh.set(now);
+
+        let dl_unchanged = dl_total == global_dl.get();
+        let ul_unchanged = ul_total == global_ul.get();
+        let old_rows = torrents.get();
+        let stats_unchanged = dl_unchanged
+            && ul_unchanged
+            && old_rows.len() == rows.len()
+            && old_rows.iter().zip(rows.iter()).all(|(a, b)| {
+                a.stats == b.stats
+                    && a.display_progress == b.display_progress
+                    && a.file_priorities == b.file_priorities
+                    && a.have_pieces == b.have_pieces
+            });
+
+        if stats_unchanged {
+            tracing::trace!("refresh: no change, skipping set()");
+        } else {
+            tracing::trace!("refresh: data changed, updating signals (dl={}->{}, ul={}->{}, rows={}->{})",
+                global_dl.get(), dl_total, global_ul.get(), ul_total, old_rows.len(), rows.len());
+            torrents.set(rows);
+            global_dl.set(dl_total);
+            global_ul.set(ul_total);
+        }
+        *last_refresh.borrow_mut() = now;
     }
 
     #[cfg(any(target_os = "linux", target_os = "windows", target_os = "macos"))]

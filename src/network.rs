@@ -31,7 +31,7 @@ pub struct PeerStats {
     pub peer_interested: bool,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct TorrentStats {
     pub download_rate: u64,
     pub upload_rate: u64,
