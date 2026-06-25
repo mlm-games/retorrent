@@ -94,6 +94,18 @@ pub fn run_headless(engine: Arc<TorrentEngine>, rt: Arc<tokio::runtime::Runtime>
 }
 
 #[cfg(feature = "desktop-bin")]
+mod single_instance {
+    use std::path::PathBuf;
+
+    pub fn socket_path() -> PathBuf {
+        dirs::data_local_dir()
+            .unwrap_or_else(|| PathBuf::from("."))
+            .join("retorrent")
+            .join("retorrent.sock")
+    }
+}
+
+#[cfg(feature = "desktop-bin")]
 pub fn run_desktop_main() -> Result<()> {
     use std::sync::mpsc;
     use tracing_subscriber::{EnvFilter, fmt};
@@ -161,6 +173,92 @@ pub fn run_desktop_main() -> Result<()> {
     let engine = Arc::new(engine);
 
     let engine_for_shutdown = engine.clone();
+
+    // Single-instance IPC: forward CLI args to an already-running instance.
+    if !headless {
+        let socket_path = single_instance::socket_path();
+        let forwarded = rt.block_on(async {
+            use tokio::io::AsyncWriteExt;
+
+            if let Ok(mut stream) = tokio::net::UnixStream::connect(&socket_path).await {
+                let mut skip_next = false;
+                for a in args.iter().skip(1) {
+                    if skip_next { skip_next = false; continue; }
+                    if *a == "--download-dir" { skip_next = true; continue; }
+                    if a.starts_with("--") { continue; }
+                    let _ = stream.write_all(format!("{}\n", a).as_bytes()).await;
+                }
+                return true;
+            }
+
+            // No existing instance — bind socket for future instances.
+            let _ = std::fs::remove_file(&socket_path);
+            if let Ok(listener) = tokio::net::UnixListener::bind(&socket_path) {
+                let eng = engine.clone();
+                let rt_clone = rt.clone();
+                tokio::spawn(async move {
+                    loop {
+                        match listener.accept().await {
+                            Ok((stream, _)) => {
+                                let eng = eng.clone();
+                                let rt = rt_clone.clone();
+                                tokio::spawn(async move {
+                                    use tokio::io::AsyncBufReadExt;
+                                    let mut reader = tokio::io::BufReader::new(stream);
+                                    let mut line = String::new();
+                                    loop {
+                                        match reader.read_line(&mut line).await {
+                                            Ok(0) => break,
+                                            Ok(_) => {
+                                                let arg = line.trim().to_string();
+                                                if arg.starts_with("magnet:?") || arg.starts_with("magnet:") {
+                                                    match eng.add_torrent_from_magnet(&arg, None) {
+                                                        Ok(hash) => eng.start_torrent(&hash, &rt),
+                                                        Err(e) => tracing::error!("IPC magnet: {}", e),
+                                                    }
+                                                } else {
+                                                    let path = arg.strip_prefix("file://").unwrap_or(&arg);
+                                                    match std::fs::read(path) {
+                                                        Ok(data) => match MetaInfo::from_bytes(&data) {
+                                                            Ok(_) => match eng.add_torrent_from_bytes(data, None, None) {
+                                                                Ok(hash) => eng.start_torrent(&hash, &rt),
+                                                                Err(e) => tracing::error!("IPC torrent: {}", e),
+                                                            },
+                                                            Err(e) => tracing::error!("IPC torrent parse: {}", e),
+                                                        },
+                                                        Err(e) => tracing::error!("IPC torrent read: {}", e),
+                                                    }
+                                                }
+                                                line.clear();
+                                            }
+                                            Err(e) => {
+                                                tracing::error!("IPC read error: {}", e);
+                                                break;
+                                            }
+                                        }
+                                    }
+                                });
+                            }
+                            Err(e) => {
+                                tracing::error!("IPC accept error: {}", e);
+                                break;
+                            }
+                        }
+                    }
+                });
+                tracing::info!("IPC socket bound at {:?}", socket_path);
+            } else {
+                // Race: another instance bound between our connect and bind.
+                // Try again — but if we reach here we just run without IPC.
+                tracing::debug!("IPC socket bind failed at {:?}", socket_path);
+            }
+            false
+        });
+        if forwarded {
+            return Ok(());
+        }
+    }
+
     let pending: Arc<Mutex<Vec<PendingTorrent>>> = Arc::new(Mutex::new(Vec::new()));
     let suggested_dir =
         dirs::download_dir().unwrap_or_else(|| engine.config_read().download_dir.clone());
@@ -257,6 +355,7 @@ pub fn run_desktop_main() -> Result<()> {
         )
     })?;
 
+    let _ = std::fs::remove_file(single_instance::socket_path());
     tracing::info!("Shutting down, saving resume data...");
     engine_for_shutdown.save_all_resume();
     tracing::info!("Done.");

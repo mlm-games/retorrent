@@ -204,7 +204,9 @@ impl TorrentSession {
             added_time: chrono::Utc::now().timestamp(),
             completed_time: *self.completed_time.lock(),
             torrent_bytes: self.torrent_bytes.lock().clone(),
-            prev_state: if self.paused.load(Ordering::Relaxed) || !self.started.load(Ordering::Relaxed) {
+            prev_state: if self.paused.load(Ordering::Relaxed)
+                || !self.started.load(Ordering::Relaxed)
+            {
                 PrevState::Paused
             } else {
                 PrevState::Running
@@ -555,8 +557,10 @@ impl TorrentSession {
             PeerConnection::connect(addr, &self.info_hash, &self.peer_id).await?
         };
 
-        let bitfield = self.piece_manager.read().have_bitfield();
-        conn.send_message(&PeerMessage::Bitfield(bitfield)).await?;
+        if self.meta.read().num_pieces() > 0 {
+            let bitfield = self.piece_manager.read().have_bitfield();
+            conn.send_message(&PeerMessage::Bitfield(bitfield)).await?;
+        }
 
         conn.send_message(&PeerMessage::Interested).await?;
         conn.am_interested = true;
@@ -833,6 +837,12 @@ impl TorrentSession {
                     if let Some(metadata_id) = metadata_id {
                         conn.peer_metadata_id = Some(metadata_id);
                         if self.meta.read().num_pieces() == 0 {
+                            tracing::trace!(
+                                "Peer {} supports ut_metadata (id={}), metadata_size={:?}",
+                                conn.addr,
+                                metadata_id,
+                                metadata_size
+                            );
                             // Don't ask if peer is in back-off from a prior reject.
                             let in_backoff = conn
                                 .metadata_reject_until
@@ -853,6 +863,11 @@ impl TorrentSession {
                                         .and_then(|ms| ms.pieces.iter().position(|p| p.is_none()))
                                         .unwrap_or(0)
                                 };
+                                tracing::trace!(
+                                    "Requesting metadata piece {} from {}",
+                                    request_piece,
+                                    conn.addr
+                                );
                                 let req = PeerMessage::build_metadata_request(request_piece);
                                 conn.send_message(&PeerMessage::Extended {
                                     id: metadata_id,
@@ -860,6 +875,12 @@ impl TorrentSession {
                                 })
                                 .await?;
                                 conn.metadata_sent_requests.push(request_piece);
+                            } else {
+                                tracing::trace!(
+                                    "Peer {} in metadata backoff until {:?}",
+                                    conn.addr,
+                                    conn.metadata_reject_until
+                                );
                             }
                         }
                     }
@@ -961,6 +982,14 @@ impl TorrentSession {
                                         if piece == 0 && ms.total_size == 0 {
                                             (None, None)
                                         } else {
+                                            tracing::trace!(
+                                                "Stored metadata piece {} from {} (total_size={}, {}/{} pieces)",
+                                                piece,
+                                                conn.addr,
+                                                ms.total_size,
+                                                ms.pieces.iter().filter(|p| p.is_some()).count(),
+                                                ms.pieces.len()
+                                            );
                                             let done = ms.store_piece(piece, data);
                                             if done {
                                                 if let Some(assembled) = ms.assemble() {
@@ -1005,6 +1034,11 @@ impl TorrentSession {
                                         .metadata_reject_until
                                         .map_or(false, |t| t > std::time::Instant::now());
                                     if !in_backoff {
+                                        tracing::trace!(
+                                            "Requesting metadata piece {} from {}",
+                                            next,
+                                            conn.addr
+                                        );
                                         let req = PeerMessage::build_metadata_request(next);
                                         conn.send_message(&PeerMessage::Extended {
                                             id: ext_id,
@@ -1351,7 +1385,7 @@ impl TorrentSession {
 
     /// Wrap a raw info-dict in a minimal torrent file.
     fn wrap_info_dict(info_dict: &[u8]) -> Vec<u8> {
-        let mut data = b"d6:info".to_vec();
+        let mut data = b"d4:info".to_vec();
         data.extend_from_slice(info_dict);
         data.push(b'e');
         data
