@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       version_name:
-        description: 'Version name (e.g., 0.1.0)'
+        description: "Version name (e.g., 0.1.0)"
         required: true
 
 jobs:
@@ -107,6 +107,7 @@ jobs:
           Categories=Network;FileTransfer;P2P;
           MimeType=application/x-bittorrent;x-scheme-handler/magnet;
           StartupNotify=true
+          StartupWMClass=retorrent
           DESKTOP_EOF
 
             install -Dm644 "${srcdir}/icon.png" "${pkgdir}/usr/share/pixmaps/${_pkgname}.png"
@@ -124,7 +125,7 @@ jobs:
         with:
           pkgname: retorrent-bin
           pkgbuild: aur-package/PKGBUILD
-          auto_pkgrel: 'true'
+          auto_pkgrel: "true"
           commit_username: MLM-stuff
           commit_email: gfxoxinzh@mozmail.com
           ssh_private_key: ${{ secrets.AUR_SSH_PRIVATE_KEY }}
