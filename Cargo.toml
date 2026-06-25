@@ -105,12 +105,12 @@ reqwest = { version = "0.13.4", features = [
 ], default-features = false }
 tokio-util = { version = "0.7", features = ["codec"] }
 
-repose-core = { version = "0.19.4" }
-repose-ui = { version = "0.19.4" }
-repose-material = { version = "0.19.4" }
-repose-text = { version = "0.19.4" }
-repose-devtools = { version = "0.19.4" }
-repose-platform = { version = "0.19.4" }
+repose-core = { version = "0.19.5" }
+repose-ui = { version = "0.19.5" }
+repose-material = { version = "0.19.5" }
+repose-text = { version = "0.19.5" }
+repose-devtools = { version = "0.19.5" }
+repose-platform = { version = "0.19.5" }
 
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
