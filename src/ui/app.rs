@@ -127,7 +127,8 @@ pub fn app(
     let torrents: Rc<Signal<Vec<TorrentRow>>> = remember(|| signal(Vec::new()));
     let global_dl: Rc<Signal<u64>> = remember(|| signal(0));
     let global_ul: Rc<Signal<u64>> = remember(|| signal(0));
-    let last_refresh: Rc<RefCell<web_time::Instant>> = remember(|| RefCell::new(web_time::Instant::now()));
+    let last_refresh: Rc<RefCell<web_time::Instant>> =
+        remember(|| RefCell::new(web_time::Instant::now()));
 
     let overlay = remember(|| OverlayHandle::new());
     let magnet_state = remember(|| DialogState::new());
@@ -269,8 +270,15 @@ pub fn app(
         if stats_unchanged {
             tracing::trace!("refresh: no change, skipping set()");
         } else {
-            tracing::trace!("refresh: data changed, updating signals (dl={}->{}, ul={}->{}, rows={}->{})",
-                global_dl.get(), dl_total, global_ul.get(), ul_total, old_rows.len(), rows.len());
+            tracing::trace!(
+                "refresh: data changed, updating signals (dl={}->{}, ul={}->{}, rows={}->{})",
+                global_dl.get(),
+                dl_total,
+                global_ul.get(),
+                ul_total,
+                old_rows.len(),
+                rows.len()
+            );
             torrents.set(rows);
             global_dl.set(dl_total);
             global_ul.set(ul_total);
@@ -322,7 +330,10 @@ pub fn app(
 
     // Main content
     let content = Column(
-        Modifier::new().fill_max_size(), // .system_bars_padding(), // .ime_padding(),
+        Modifier::new()
+            .fill_max_size()
+            .system_bars_padding()
+            .ime_padding(),
     )
     .child((
         top_bar_view(
