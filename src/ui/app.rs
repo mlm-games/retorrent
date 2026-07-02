@@ -319,6 +319,7 @@ pub fn app(
                     && a.have_pieces == b.have_pieces
             });
 
+        let tray_needs_update = !stats_unchanged;
         if stats_unchanged {
             tracing::trace!("refresh: no change, skipping set()");
         } else {
@@ -336,27 +337,27 @@ pub fn app(
             global_ul.set(ul_total);
         }
         *last_refresh.borrow_mut() = now;
-    }
 
-    #[cfg(any(target_os = "linux", target_os = "windows", target_os = "macos"))]
-    {
-        let rows = torrents.get();
-        let active = rows
-            .iter()
-            .filter(|t| {
-                matches!(
-                    t.stats.state,
-                    TorrentState::Downloading | TorrentState::Seeding
-                )
-            })
-            .count();
-        tray.set_tooltip(&format!(
-            "Retorrent\n\u{2B07} {}  \u{2B06} {}\n{}/{} active",
-            format_speed(global_dl.get()),
-            format_speed(global_ul.get()),
-            active,
-            rows.len()
-        ));
+        #[cfg(any(target_os = "linux", target_os = "windows", target_os = "macos"))]
+        if tray_needs_update {
+            let new_rows = torrents.get();
+            let active = new_rows
+                .iter()
+                .filter(|t| {
+                    matches!(
+                        t.stats.state,
+                        TorrentState::Downloading | TorrentState::Seeding
+                    )
+                })
+                .count();
+            tray.set_tooltip(&format!(
+                "Retorrent\n\u{2B07} {}  \u{2B06} {}\n{}/{} active",
+                format_speed(global_dl.get()),
+                format_speed(global_ul.get()),
+                active,
+                new_rows.len()
+            ));
+        }
     }
 
     let all_torrents = torrents.get();
