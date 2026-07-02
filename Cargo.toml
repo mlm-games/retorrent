@@ -1,6 +1,6 @@
 [package]
 name = "retorrent"
-version = "0.2.11"
+version = "0.3.0"
 edition = "2024"
 resolver = "3"
 license = "AGPL-3.0"
@@ -105,12 +105,12 @@ reqwest = { version = "0.13.4", features = [
 ], default-features = false }
 tokio-util = { version = "0.7", features = ["codec"] }
 
-repose-core = { version = "0.19.5" }
-repose-ui = { version = "0.19.5" }
-repose-material = { version = "0.19.5" }
-repose-text = { version = "0.19.5" }
-repose-devtools = { version = "0.19.5" }
-repose-platform = { version = "0.19.5" }
+repose-core = { version = "0.20" }
+repose-ui = { version = "0.20" }
+repose-material = { version = "0.20" }
+repose-text = { version = "0.20" }
+repose-devtools = { version = "0.20" }
+repose-platform = { version = "0.20" }
 
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
@@ -142,7 +142,6 @@ rlobkit-dialogs = "0.2.3"
 # rlobkit-dialogs = { path = "../rlobkit/rlobkit-dialogs" }
 # repose-core = { path = "../repose/crates/repose-core" }
 # repose-ui = { path = "../repose/crates/repose-ui" }
-# repose-material = { path = "../repose/crates/repose-material" }
 # repose-text = { path = "../repose/crates/repose-text" }
 # repose-devtools = { path = "../repose/crates/repose-devtools" }
 # repose-platform = { path = "../repose/crates/repose-platform" }

@@ -9,14 +9,15 @@ use crate::android_service;
 use repose_core::locals::set_theme_default;
 use repose_core::modifier::{PaddingValues, StateColors};
 use repose_core::prelude::*;
-use repose_material::material3::dialog::{Dialog, DialogState};
+use repose_material::material3::dialog::{Dialog, DialogProperties, DialogState};
 use repose_material::material3::{
-    self, ButtonConfig, Checkbox, CheckboxConfig, ChipConfig, FilledButton, FilledTonalButton,
+    self, Button, ButtonConfig, Checkbox, CheckboxConfig, ChipConfig, FilledTonalButton,
     IconButton, IconButtonConfig, Switch, SwitchConfig, TabRow, TabRowConfig, TextButton,
+    TextField, TextFieldConfig,
 };
 use repose_ui::overlay::OverlayHandle;
 use repose_ui::scroll::{ScrollArea, remember_scroll_state};
-use repose_ui::{textfield::TextField, *};
+use repose_ui::*;
 
 use crate::PendingTorrent;
 use crate::config::Config;
@@ -510,7 +511,7 @@ fn top_bar_view(
 
         children.push(Spacer());
 
-        children.push(FilledButton(
+        children.push(Button(
             Modifier::new().height(40.0),
             {
                 let pending_from_button = pending_from_button.clone();
@@ -762,14 +763,16 @@ fn filter_search_panel(
     )
     .child((
         TextField(
-            "Search torrents",
-            search_query.get(),
             Modifier::new().fill_max_width().height(42.0),
-            Some({
+            search_query.get(),
+            {
                 let q = search_query.clone();
                 move |v| q.set(v)
-            }),
-            None::<fn(String)>,
+            },
+            TextFieldConfig {
+                label: Some("Search torrents".into()),
+                ..Default::default()
+            },
         ),
         Box(Modifier::new().height(10.0)),
         FlowRow(
@@ -1087,6 +1090,8 @@ fn details_tabs(active_tab: Rc<Signal<Tab>>) -> View {
                 let active_tab = active_tab.clone();
                 move || active_tab.set(tab)
             }),
+            enabled: true,
+            interaction_source: None,
         })
         .collect();
 
@@ -1414,18 +1419,21 @@ fn magnet_dialog_view(
         state.clone(),
         overlay,
         Modifier::new(),
+        DialogProperties::default(),
         Column(Modifier::new().padding(24.0).min_width(400.0)).child((
             Text("Add Magnet Link").size(18.0).color(th.on_surface),
             Box(Modifier::new().height(12.0)),
             TextField(
-                "magnet:?xt=urn:btih:...",
-                magnet_input.get(),
                 Modifier::new().fill_max_width().height(60.0),
-                Some({
+                magnet_input.get(),
+                {
                     let m = magnet_input.clone();
                     move |v| m.set(v)
-                }),
-                None::<fn(String)>,
+                },
+                TextFieldConfig {
+                    label: Some("magnet:?xt=urn:btih:...".into()),
+                    ..Default::default()
+                },
             ),
             Box(Modifier::new().height(16.0)),
             Row(Modifier::new()
@@ -1446,7 +1454,7 @@ fn magnet_dialog_view(
                     || Text("Cancel"),
                 ),
                 Box(Modifier::new().width(8.0)),
-                FilledButton(
+                Button(
                     Modifier::new(),
                     {
                         let s = state.clone();
@@ -1488,18 +1496,21 @@ fn url_dialog_view(
         state.clone(),
         overlay,
         Modifier::new(),
+        DialogProperties::default(),
         Column(Modifier::new().padding(24.0).min_width(400.0)).child((
             Text("Add Torrent from URL").size(18.0).color(th.on_surface),
             Box(Modifier::new().height(12.0)),
             TextField(
-                "https://example.com/file.torrent",
-                url_input.get(),
                 Modifier::new().fill_max_width().height(60.0),
-                Some({
+                url_input.get(),
+                {
                     let u = url_input.clone();
                     move |v| u.set(v)
-                }),
-                None::<fn(String)>,
+                },
+                TextFieldConfig {
+                    label: Some("https://example.com/file.torrent".into()),
+                    ..Default::default()
+                },
             ),
             Box(Modifier::new().height(16.0)),
             Row(Modifier::new()
@@ -1520,7 +1531,7 @@ fn url_dialog_view(
                     || Text("Cancel"),
                 ),
                 Box(Modifier::new().width(8.0)),
-                FilledButton(
+                Button(
                     Modifier::new(),
                     {
                         let s = state.clone();
@@ -1591,6 +1602,7 @@ fn remove_dialog_view(
         state.clone(),
         overlay,
         Modifier::new(),
+        DialogProperties::default(),
         Column(Modifier::new().padding(24.0).min_width(360.0)).child((
             Text("Remove Torrent").size(18.0).color(th.on_surface),
             Box(Modifier::new().height(12.0)),
@@ -1630,7 +1642,7 @@ fn remove_dialog_view(
                     || Text("Cancel"),
                 ),
                 Box(Modifier::new().width(8.0)),
-                FilledButton(
+                Button(
                     Modifier::new(),
                     {
                         let s = state.clone();
@@ -1712,6 +1724,7 @@ fn settings_dialog_view(
         state.clone(),
         overlay,
         Modifier::new().max_width(540.0),
+        DialogProperties::default(),
         Column(Modifier::new().padding(24.0)).child((
             Text("\u{2699} Settings").size(18.0).color(th.on_surface),
             Box(Modifier::new().height(12.0)),
@@ -1735,14 +1748,13 @@ fn settings_dialog_view(
                                 .color(th.on_surface_variant)
                                 .modifier(Modifier::new().width(150.0)),
                             TextField(
-                                "",
-                                input.get(),
                                 Modifier::new().flex_grow(1.0).height(28.0),
-                                Some({
+                                input.get(),
+                                {
                                     let s = input.clone();
                                     move |v| s.set(v)
-                                }),
-                                None::<fn(String)>,
+                                },
+            Default::default(),
                             ),
                         ))
                     };
@@ -1947,7 +1959,7 @@ fn settings_dialog_view(
                     || Text("Cancel"),
                 ),
                 Box(Modifier::new().width(8.0)),
-                FilledButton(
+                Button(
                     Modifier::new(),
                     {
                         let s = state.clone();
@@ -2230,14 +2242,13 @@ fn add_torrent_dialog_view(
                         .color(th.on_surface_variant)
                         .modifier(Modifier::new().width(110.0)),
                     TextField(
-                        "Path",
-                        download_path_input.get(),
                         Modifier::new().flex_grow(1.0).height(36.0),
-                        Some({
+                        download_path_input.get(),
+                        {
                             let p = download_path_input.clone();
                             move |v| p.set(v)
-                        }),
-                        None::<fn(String)>,
+                        },
+                Default::default(),
                     ),
                     Box(Modifier::new().width(6.0)),
                     FilledTonalButton(
@@ -2297,7 +2308,7 @@ fn add_torrent_dialog_view(
                         || Text("Cancel"),
                     ),
                     Box(Modifier::new().width(8.0)),
-                    FilledButton(
+                    Button(
                         Modifier::new(),
                         move || on_confirm(),
                         ButtonConfig::default(),
@@ -2318,6 +2329,7 @@ fn add_torrent_dialog_view(
         state.clone(),
         overlay,
         Modifier::new().max_width(500.0).max_height(560.0),
+        DialogProperties::default(),
         content,
     )
 }
