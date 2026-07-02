@@ -1,6 +1,6 @@
 use crate::types::TorrentState;
 use crate::ui::theme;
-use repose_core::prelude::*;
+use repose_core::{PaddingValues, prelude::*};
 use repose_material::material3::{LinearProgressIndicator, LinearProgressIndicatorConfig};
 use repose_ui::{Box, Column, Row, Text, TextStyle, ViewExt, box_with_constraints_with_key};
 
@@ -62,7 +62,7 @@ pub fn piece_map_view(have: &[bool]) -> View {
         move |scope| {
             let n = have_data.len();
 
-            let edge_padding = 28.0;
+            let edge_padding = 8.0;
             let spacing = 1.0;
             let min_piece_size = 3.0;
 
@@ -70,8 +70,8 @@ pub fn piece_map_view(have: &[bool]) -> View {
                 return Box(Modifier::new().fill_max_size());
             }
 
-            let available_w = (scope.max_width / 2.0).max(0.0);
-            let available_h = (scope.max_height / 2.0).max(0.0);
+            let available_w = scope.max_width.max(0.0);
+            let available_h = (scope.max_height / 2.0).max(0.0); // HACK: goes offscreen to the bottom without this
 
             if available_w < min_piece_size || available_h < min_piece_size {
                 return Box(Modifier::new().fill_max_size());

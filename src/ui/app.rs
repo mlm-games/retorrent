@@ -12,10 +12,10 @@ use repose_core::prelude::*;
 use repose_material::material3::dialog::{Dialog, DialogProperties, DialogState};
 use repose_material::material3::{
     self, Button, ButtonConfig, Checkbox, CheckboxConfig, ChipConfig, FilledTonalButton,
-    IconButton, IconButtonConfig, Switch, SwitchConfig, TabRow, TabRowConfig, TextButton,
-    TextField, TextFieldConfig,
+    IconButton, IconButtonConfig, Snackbar as SnackbarView, SnackbarConfig, Switch, SwitchConfig,
+    TabRow, TabRowConfig, TextButton, TextField, TextFieldConfig,
 };
-use repose_ui::overlay::OverlayHandle;
+use repose_ui::overlay::{OverlayHandle, SnackbarAction, SnackbarController, SnackbarRequest};
 use repose_ui::scroll::{ScrollArea, remember_scroll_state};
 use repose_ui::*;
 
@@ -110,6 +110,18 @@ fn torrent_state_symbol(state: TorrentState) -> Symbol {
     }
 }
 
+fn show_snackbar(snackbar: &SnackbarController, msg: String) {
+    tracing::error!("{}", msg);
+    snackbar.show(SnackbarRequest {
+        message: msg.clone(),
+        action: None,
+        duration_ms: 4000,
+        builder: Rc::new(move || {
+            SnackbarView(msg.clone(), None::<SnackbarAction>, Modifier::new(), SnackbarConfig::default())
+        }),
+    });
+}
+
 pub fn app(
     _sched: &mut Scheduler,
     engine: Arc<TorrentEngine>,
@@ -132,6 +144,15 @@ pub fn app(
         remember(|| RefCell::new(web_time::Instant::now()));
 
     let overlay = remember(|| OverlayHandle::new());
+    let snackbar = remember(|| SnackbarController::new((*overlay).clone()));
+    let pending_errors: Rc<std::sync::Arc<std::sync::Mutex<Vec<String>>>> =
+        remember(|| std::sync::Arc::new(std::sync::Mutex::new(Vec::new())));
+    {
+        let mut errors = pending_errors.lock().unwrap();
+        for e in errors.drain(..) {
+            show_snackbar(&snackbar, e);
+        }
+    }
     let magnet_state = remember(|| DialogState::new());
     let url_state = remember(|| DialogState::new());
     let remove_state = remember(|| DialogState::new());
@@ -208,34 +229,45 @@ pub fn app(
                     trackers.push(a.clone());
                 }
                 for tier in &meta.announce_list {
-                    trackers.extend(tier.iter().cloned());
+                    for t in tier.iter() {
+                        if !trackers.contains(t) {
+                            trackers.push(t.clone());
+                        }
+                    }
                 }
                 let pl = meta.piece_length;
                 let priorities = session.get_file_priorities();
                 let display_progress = {
-                    let mut total = 0u32;
-                    let mut done = 0u32;
-                    for (i, fp) in priorities.iter().enumerate() {
-                        if *fp == FilePriority::Skip {
-                            continue;
-                        }
-                        if i >= files.len() {
-                            break;
-                        }
-                        let f = &files[i];
-                        let first = (f.offset / pl) as usize;
-                        let last = ((f.offset + f.length - 1) / pl) as usize;
-                        for p in first..=last {
-                            total += 1;
-                            if p < have.len() && have[p] {
-                                done += 1;
+                    if pl == 0 {
+                        0.0
+                    } else {
+                        let mut total = 0u32;
+                        let mut done = 0u32;
+                        for (i, fp) in priorities.iter().enumerate() {
+                            if *fp == FilePriority::Skip {
+                                continue;
+                            }
+                            if i >= files.len() {
+                                break;
+                            }
+                            let f = &files[i];
+                            if f.length == 0 {
+                                continue;
+                            }
+                            let first = (f.offset / pl) as usize;
+                            let last = ((f.offset + f.length - 1) / pl) as usize;
+                            for p in first..=last {
+                                total += 1;
+                                if p < have.len() && have[p] {
+                                    done += 1;
+                                }
                             }
                         }
-                    }
-                    if total > 0 {
-                        done as f32 / total as f32
-                    } else {
-                        0.0
+                        if total > 0 {
+                            done as f32 / total as f32
+                        } else {
+                            0.0
+                        }
                     }
                 };
 
@@ -254,6 +286,25 @@ pub fn app(
                 });
             }
         }
+
+        // Stable sort to prevent list jumping from DashMap's non-deterministic iteration
+        fn state_ord(s: TorrentState) -> u8 {
+            match s {
+                TorrentState::Downloading => 0,
+                TorrentState::FetchingMetadata => 1,
+                TorrentState::Seeding => 2,
+                TorrentState::Complete => 3,
+                TorrentState::Paused => 4,
+                TorrentState::Queued => 5,
+                TorrentState::Checking => 6,
+                TorrentState::Error => 7,
+            }
+        }
+        rows.sort_by(|a, b| {
+            state_ord(b.stats.state)
+                .cmp(&state_ord(a.stats.state))
+                .then_with(|| a.name.cmp(&b.name))
+        });
 
         let dl_unchanged = dl_total == global_dl.get();
         let ul_unchanged = ul_total == global_ul.get();
@@ -313,13 +364,14 @@ pub fn app(
     // Filter and search
     let filter = filter_state.get();
     let query = search_query.get();
+    let query_lower = query.to_lowercase();
     let filtered_indices: Vec<usize> = all_torrents
         .iter()
         .enumerate()
         .filter(|(_, t)| {
             let state_match = matches_filter(t, filter);
             let query_match =
-                query.is_empty() || t.name.to_lowercase().contains(&query.to_lowercase());
+                query.is_empty() || t.name.to_lowercase().contains(&query_lower);
             state_match && query_match
         })
         .map(|(i, _)| i)
@@ -346,9 +398,11 @@ pub fn app(
             url_state.clone(),
             remove_state.clone(),
             settings_state.clone(),
+            add_state.clone(),
             global_dl.get(),
             global_ul.get(),
             (*pending_from_button).clone(),
+            (*pending_errors).clone(),
         ),
         main_shell_view(
             &all_torrents,
@@ -376,6 +430,7 @@ pub fn app(
                 magnet_input.clone(),
                 engine.clone(),
                 rt.clone(),
+                (*snackbar).clone(),
             ),
             url_dialog_view(
                 url_state.clone(),
@@ -384,6 +439,7 @@ pub fn app(
                 engine.clone(),
                 rt.clone(),
                 (*pending_from_button).clone(),
+                (*pending_errors).clone(),
             ),
             remove_dialog_view(
                 remove_state.clone(),
@@ -453,9 +509,11 @@ fn top_bar_view(
     url_state: Rc<DialogState>,
     remove_state: Rc<DialogState>,
     settings_state: Rc<DialogState>,
+    add_state: Rc<DialogState>,
     global_dl: u64,
     global_ul: u64,
     pending_from_button: Arc<Mutex<Vec<PendingTorrent>>>,
+    pending_errors: Arc<Mutex<Vec<String>>>,
 ) -> View {
     let th = theme();
 
@@ -517,11 +575,27 @@ fn top_bar_view(
                 let pending_from_button = pending_from_button.clone();
                 let engine = engine.clone();
                 let rt = rt.clone();
+                let errors = pending_errors.clone();
+                let ms = magnet_state.clone();
+                let us = url_state.clone();
+                let rs = remove_state.clone();
+                let ss = settings_state.clone();
+                let ads = add_state.clone();
                 move || {
+                    if ms.is_visible() || us.is_visible() || rs.is_visible() || ss.is_visible() || ads.is_visible() {
+                        return;
+                    }
                     let pending_from_button = pending_from_button.clone();
                     let engine = engine.clone();
                     let rt = rt.clone();
+                    let errors = errors.clone();
                     std::thread::spawn(move || {
+                        let push_error = |msg: String| {
+                            tracing::error!("{}", msg);
+                            if let Ok(mut e) = errors.lock() {
+                                e.push(msg);
+                            }
+                        };
                         #[cfg(any(
                             target_os = "linux",
                             target_os = "windows",
@@ -548,10 +622,10 @@ fn top_bar_view(
                                             }
                                         }
                                         Err(e) => {
-                                            tracing::error!("Failed to parse torrent: {}", e)
+                                            push_error(format!("Failed to parse torrent: {}", e));
                                         }
                                     },
-                                    Err(e) => tracing::error!("Failed to read file: {}", e),
+                                    Err(e) => push_error(format!("Failed to read file: {}", e)),
                                 }
                             }
                         }
@@ -568,7 +642,14 @@ fn top_bar_view(
                             {
                                 Ok(Some(files)) => {
                                     for file in files {
-                                        let temp_dir = std::env::temp_dir();
+                                        let temp_dir = if cfg!(target_os = "android") {
+                                            crate::config::ANDROID_DATA_DIR
+                                                .get()
+                                                .cloned()
+                                                .unwrap_or_else(|| std::env::temp_dir())
+                                        } else {
+                                            std::env::temp_dir()
+                                        };
                                         let temp_path =
                                             temp_dir.join(format!("torrent_{}", file.name()));
                                         if RlobKit::read_file_to_path(&file, &temp_path).is_ok() {
@@ -590,22 +671,16 @@ fn top_bar_view(
                                                             });
                                                         }
                                                     }
-                                                    Err(e) => tracing::error!(
-                                                        "Failed to parse torrent: {}",
-                                                        e
-                                                    ),
+                                                    Err(e) => push_error(format!("Failed to parse torrent: {}", e)),
                                                 },
-                                                Err(e) => tracing::error!(
-                                                    "Failed to read temp file: {}",
-                                                    e
-                                                ),
+                                                Err(e) => push_error(format!("Failed to read temp file: {}", e)),
                                             }
                                             let _ = std::fs::remove_file(&temp_path);
                                         }
                                     }
                                 }
                                 Ok(None) => {}
-                                Err(e) => tracing::error!("File picker error: {}", e),
+                                Err(e) => push_error(format!("File picker error: {}", e)),
                             }
                         });
                     });
@@ -627,7 +702,17 @@ fn top_bar_view(
             Modifier::new().height(40.0),
             {
                 let s = magnet_state.clone();
-                move || s.show()
+                let ms = magnet_state.clone();
+                let us = url_state.clone();
+                let rs = remove_state.clone();
+                let ss = settings_state.clone();
+                let ads = add_state.clone();
+                move || {
+                    if ms.is_visible() || us.is_visible() || rs.is_visible() || ss.is_visible() || ads.is_visible() {
+                        return;
+                    }
+                    s.show()
+                }
             },
             ButtonConfig::default(),
             || {
@@ -645,7 +730,15 @@ fn top_bar_view(
             Modifier::new().height(40.0),
             {
                 let s = url_state.clone();
+                let ms = magnet_state.clone();
+                let us = url_state.clone();
+                let rs = remove_state.clone();
+                let ss = settings_state.clone();
+                let ads = add_state.clone();
                 move || {
+                    if ms.is_visible() || us.is_visible() || rs.is_visible() || ss.is_visible() || ads.is_visible() {
+                        return;
+                    }
                     s.show();
                 }
             },
@@ -695,7 +788,15 @@ fn top_bar_view(
             {
                 let selected = selected.clone();
                 let s = remove_state.clone();
+                let ms = magnet_state.clone();
+                let us = url_state.clone();
+                let rs = remove_state.clone();
+                let ss = settings_state.clone();
+                let ads = add_state.clone();
                 move || {
+                    if ms.is_visible() || us.is_visible() || rs.is_visible() || ss.is_visible() || ads.is_visible() {
+                        return;
+                    }
                     if selected.get().is_some() {
                         s.show();
                     }
@@ -710,7 +811,17 @@ fn top_bar_view(
             icon(Symbols::SETTINGS, 20.0, th.on_surface_variant),
             {
                 let s = settings_state.clone();
-                move || s.show()
+                let ms = magnet_state.clone();
+                let us = url_state.clone();
+                let rs = remove_state.clone();
+                let ss = settings_state.clone();
+                let ads = add_state.clone();
+                move || {
+                    if ms.is_visible() || us.is_visible() || rs.is_visible() || ss.is_visible() || ads.is_visible() {
+                        return;
+                    }
+                    s.show()
+                }
             },
             IconButtonConfig::default(),
         ));
@@ -898,10 +1009,9 @@ fn torrent_card_view(
             pressed: th.primary_container.with_alpha(120),
             disabled: bg,
         })
-        .clickable()
-        .on_pointer_down({
+        .on_click({
             let selected = selected.clone();
-            move |_| selected.set(Some(hash))
+            move || selected.set(Some(hash))
         }))
     .child(
         Row(Modifier::new().fill_max_width()).child((
@@ -916,7 +1026,7 @@ fn torrent_card_view(
                 .child((
                     icon(state_symbol, 20.0, state_color),
                     Box(Modifier::new().width(8.0)),
-                    Text(&torrent.name).size(14.0).color(th.on_surface),
+                    Text(&torrent.name).size(14.0).color(th.on_surface).overflow_ellipsize(),
                     Spacer(),
                     Text(format_bytes(torrent.total_size))
                         .size(11.0)
@@ -1296,6 +1406,9 @@ fn files_tab_view(torrent: &TorrentRow, _info_hash: InfoHash, _engine: Arc<Torre
                 .background(th.outline_variant)));
 
             for (fi, file) in files.iter().enumerate() {
+                if file.length == 0 {
+                    continue;
+                }
                 let display_name = file.path.rsplit('/').next().unwrap_or(&file.path);
                 let current_prio = file_priorities
                     .get(fi)
@@ -1412,6 +1525,7 @@ fn magnet_dialog_view(
     magnet_input: Rc<Signal<String>>,
     engine: Arc<TorrentEngine>,
     rt: Arc<tokio::runtime::Runtime>,
+    snackbar: SnackbarController,
 ) -> View {
     let th = theme();
 
@@ -1459,6 +1573,7 @@ fn magnet_dialog_view(
                     {
                         let s = state.clone();
                         let m = magnet_input.clone();
+                        let snackbar = snackbar.clone();
                         move || {
                             let uri = m.get().trim().to_string();
                             if !uri.is_empty() {
@@ -1467,7 +1582,10 @@ fn magnet_dialog_view(
                                         engine.start_torrent(&hash, &rt);
                                         tracing::info!("Added magnet: {}", hash);
                                     }
-                                    Err(e) => tracing::error!("Failed to add magnet: {}", e),
+                                    Err(e) => show_snackbar(
+                                        &snackbar,
+                                        format!("Failed to add magnet: {}", e),
+                                    ),
                                 }
                             }
                             m.set(String::new());
@@ -1489,6 +1607,7 @@ fn url_dialog_view(
     engine: Arc<TorrentEngine>,
     rt: Arc<tokio::runtime::Runtime>,
     pending_from_button: Arc<Mutex<Vec<PendingTorrent>>>,
+    pending_errors: Arc<Mutex<Vec<String>>>,
 ) -> View {
     let th = theme();
 
@@ -1538,11 +1657,13 @@ fn url_dialog_view(
                         let u = url_input.clone();
                         let engine = engine.clone();
                         let pending_from_button = pending_from_button.clone();
+                        let errors = pending_errors.clone();
                         move || {
                             let url = u.get().trim().to_string();
                             if !url.is_empty() {
                                 let engine = engine.clone();
                                 let pfb = pending_from_button.clone();
+                                let errors = errors.clone();
                                 std::thread::spawn(move || match reqwest::blocking::get(&url) {
                                     Ok(resp) => match resp.bytes() {
                                         Ok(bytes) => {
@@ -1556,25 +1677,36 @@ fn url_dialog_view(
                                                             files: meta.files,
                                                             data,
                                                             suggested_dir: engine
-                                                                .config
-                                                                .read()
-                                                                .unwrap()
+                                                                .config_read()
                                                                 .download_dir
                                                                 .clone(),
                                                         });
                                                     }
                                                 }
-                                                Err(e) => tracing::error!(
-                                                    "Failed to parse torrent from URL: {}",
-                                                    e
-                                                ),
+                                                Err(e) => {
+                                                    let msg = format!("Failed to parse torrent from URL: {}", e);
+                                                    tracing::error!("{}", msg);
+                                                    if let Ok(mut errors) = errors.lock() {
+                                                        errors.push(msg);
+                                                    }
+                                                }
                                             }
                                         }
                                         Err(e) => {
-                                            tracing::error!("Failed to read response body: {}", e)
+                                            let msg = format!("Failed to read response body: {}", e);
+                                            tracing::error!("{}", msg);
+                                            if let Ok(mut errors) = errors.lock() {
+                                                errors.push(msg);
+                                            }
                                         }
                                     },
-                                    Err(e) => tracing::error!("Failed to fetch URL: {}", e),
+                                    Err(e) => {
+                                        let msg = format!("Failed to fetch URL: {}", e);
+                                        tracing::error!("{}", msg);
+                                        if let Ok(mut errors) = errors.lock() {
+                                            errors.push(msg);
+                                        }
+                                    }
                                 });
                             }
                             u.set(String::new());
@@ -2034,6 +2166,7 @@ fn add_torrent_dialog_view(
     engine: Arc<TorrentEngine>,
     rt: Arc<tokio::runtime::Runtime>,
 ) -> View {
+    let snackbar = SnackbarController::new(overlay.clone());
     let th = theme();
     let visible = state.is_visible();
     let torrent = current_add.get();
@@ -2144,6 +2277,7 @@ fn add_torrent_dialog_view(
                 let current_add = current_add.clone();
                 let download_path_input = download_path_input.clone();
                 let file_checks = file_checks.clone();
+                let snackbar = snackbar.clone();
                 move || {
                     if let Some(pt) = current_add.get() {
                         let data = pt.data.clone();
@@ -2169,7 +2303,7 @@ fn add_torrent_dialog_view(
                                 engine.start_torrent(&info_hash, &rt);
                                 tracing::info!("Added torrent: {}", info_hash);
                             }
-                            Err(e) => tracing::error!("Failed to add torrent: {}", e),
+                            Err(e) => show_snackbar(&snackbar, format!("Failed to add torrent: {}", e)),
                         }
                     }
                     let has_more = advance();

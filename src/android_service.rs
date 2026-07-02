@@ -335,8 +335,13 @@ pub fn acquire_wake_lock_if_needed() {
         None => return,
     };
     let mut guard = lock.lock().unwrap();
-    if guard.is_some() {
-        return;
+    // Release any existing lock first to prevent stale references. Then acquire a fresh one.
+    if let Some(wl) = guard.take() {
+        let _ = jni_min_helper::jni_with_env(|env| {
+            let wl = unsafe { JObject::from_raw(env, wl.as_raw()) };
+            env.call_method(&wl, jni_str!("release"), jni_sig!("()V"), &[])?;
+            Ok::<_, errors::Error>(())
+        });
     }
     let ctx_global = match SERVICE_GLOBAL.get() {
         Some(r) => r,
@@ -393,7 +398,9 @@ pub fn release_wake_lock_if_held() {
 }
 
 #[unsafe(no_mangle)]
-pub extern "system" fn Java_org_mlm_retorrent_TorrentService_nativeOnForegroundServiceTimeout<'local>(
+pub extern "system" fn Java_org_mlm_retorrent_TorrentService_nativeOnForegroundServiceTimeout<
+    'local,
+>(
     mut env: jni::EnvUnowned<'local>,
     _class: jni::sys::jclass,
 ) {
@@ -412,7 +419,10 @@ pub fn queue_torrent_bytes(bytes: Vec<u8>) {
         Ok(m) => m,
         Err(_) => return,
     };
-    let suggested_dir = PathBuf::from("/sdcard/Retorrent/downloads");
+    let suggested_dir = ENGINE
+        .get()
+        .map(|e| e.config_read().download_dir.clone())
+        .unwrap_or_else(|| PathBuf::from("/sdcard/Retorrent/downloads"));
     let pending = PendingTorrent {
         name: meta.name,
         total_size: meta.total_size,
