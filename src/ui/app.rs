@@ -523,13 +523,13 @@ fn top_bar_view(
         .height(72.0)
         .padding(12.0)
         .background(th.surface)
-        .align_items(AlignItems::Center))
+        .align_items(AlignItems::CENTER))
     .child({
         let mut children: Vec<View> = Vec::new();
 
         #[cfg(not(target_os = "android"))]
         children.push(
-            Row(Modifier::new().align_items(AlignItems::Center)).child((
+            Row(Modifier::new().align_items(AlignItems::CENTER)).child((
                 Box(Modifier::new()
                     .size(44.0, 44.0)
                     .background(th.primary_container)
@@ -537,8 +537,8 @@ fn top_bar_view(
                 .child(
                     Box(Modifier::new()
                         .fill_max_size()
-                        .align_items(AlignItems::Center)
-                        .justify_content(JustifyContent::Center))
+                        .align_items(AlignItems::CENTER)
+                        .justify_content(JustifyContent::CENTER))
                     .child(icon(Symbols::CLOUD_DOWNLOAD, 24.0, th.on_primary_container)),
                 ),
                 Box(Modifier::new().width(12.0)),
@@ -689,7 +689,7 @@ fn top_bar_view(
             },
             ButtonConfig::default(),
             || {
-                Row(Modifier::new().align_items(AlignItems::Center)).child((
+                Row(Modifier::new().align_items(AlignItems::CENTER)).child((
                     icon(Symbols::FOLDER_OPEN, 18.0, th.on_primary),
                     Box(Modifier::new().width(6.0)),
                     Text("Torrent").size(13.0),
@@ -717,7 +717,7 @@ fn top_bar_view(
             },
             ButtonConfig::default(),
             || {
-                Row(Modifier::new().align_items(AlignItems::Center)).child((
+                Row(Modifier::new().align_items(AlignItems::CENTER)).child((
                     icon(Symbols::LINK, 18.0, th.on_surface),
                     Box(Modifier::new().width(6.0)),
                     Text("Magnet").size(13.0),
@@ -745,7 +745,7 @@ fn top_bar_view(
             },
             ButtonConfig::default(),
             || {
-                Row(Modifier::new().align_items(AlignItems::Center)).child((
+                Row(Modifier::new().align_items(AlignItems::CENTER)).child((
                     icon(Symbols::PUBLIC, 18.0, th.on_surface),
                     Box(Modifier::new().width(6.0)),
                     Text("URL").size(13.0),
@@ -845,7 +845,7 @@ fn stat_pill(symbol: Symbol, value: String, color: Color) -> View {
             top: 6.0,
             bottom: 6.0,
         }))
-    .child(Row(Modifier::new().align_items(AlignItems::Center)).child((
+    .child(Row(Modifier::new().align_items(AlignItems::CENTER)).child((
         icon(symbol, 17.0, color),
         Box(Modifier::new().width(6.0)),
         Text(value).size(12.0).color(th.on_surface),
@@ -890,7 +890,7 @@ fn filter_search_panel(
         FlowRow(
             Modifier::new()
                 .fill_max_width()
-                .align_items(AlignItems::Center),
+                .align_items(AlignItems::CENTER),
         )
         .child(
             filters
@@ -925,10 +925,10 @@ fn torrent_list_view(
     if filtered_indices.is_empty() {
         return Box(Modifier::new()
             .fill_max_size()
-            .align_items(AlignItems::Center)
-            .justify_content(JustifyContent::Center))
+            .align_items(AlignItems::CENTER)
+            .justify_content(JustifyContent::CENTER))
         .child(
-            Column(Modifier::new().align_items(AlignItems::Center)).child((
+            Column(Modifier::new().align_items(AlignItems::CENTER)).child((
                 Text("No torrents found").size(15.0).color(th.on_surface),
                 Box(Modifier::new().height(4.0)),
                 Text("Add a .torrent file or magnet link to get started.")
@@ -1023,7 +1023,7 @@ fn torrent_card_view(
             Column(Modifier::new().fill_max_width().padding(12.0)).child((
                 Row(Modifier::new()
                     .fill_max_width()
-                    .align_items(AlignItems::Center))
+                    .align_items(AlignItems::CENTER))
                 .child((
                     icon(state_symbol, 20.0, state_color),
                     Box(Modifier::new().width(8.0)),
@@ -1038,7 +1038,7 @@ fn torrent_card_view(
                 Box(Modifier::new().height(8.0)),
                 Row(Modifier::new()
                     .fill_max_width()
-                    .align_items(AlignItems::Center))
+                    .align_items(AlignItems::CENTER))
                 .child({
                     let mut m: Vec<View> = Vec::new();
                     m.push(metric_compact(
@@ -1075,7 +1075,7 @@ fn torrent_card_view(
 fn metric_compact(symbol: Symbol, value: String, color: Color) -> View {
     let th = theme();
 
-    Row(Modifier::new().align_items(AlignItems::Center)).child((
+    Row(Modifier::new().align_items(AlignItems::CENTER)).child((
         icon(symbol, 14.0, color),
         Box(Modifier::new().width(3.0)),
         Text(value).size(10.5).color(th.on_surface_variant),
@@ -1098,10 +1098,10 @@ fn details_panel_view_v2(
         None => {
             return Box(Modifier::new()
                 .fill_max_size()
-                .align_items(AlignItems::Center)
-                .justify_content(JustifyContent::Center))
+                .align_items(AlignItems::CENTER)
+                .justify_content(JustifyContent::CENTER))
             .child(
-                Column(Modifier::new().align_items(AlignItems::Center)).child((
+                Column(Modifier::new().align_items(AlignItems::CENTER)).child((
                     Text("Select a torrent").size(18.0).color(th.on_surface),
                     Box(Modifier::new().height(6.0)),
                     Text("Torrent details, files, peers, trackers, and pieces will appear here.")
@@ -1140,7 +1140,7 @@ fn details_header(torrent: &TorrentRow) -> View {
     .child((
         Row(Modifier::new()
             .fill_max_width()
-            .align_items(AlignItems::Center))
+            .align_items(AlignItems::CENTER))
         .child((
             Box(Modifier::new()
                 .size(46.0, 46.0)
@@ -1149,8 +1149,8 @@ fn details_header(torrent: &TorrentRow) -> View {
             .child(
                 Box(Modifier::new()
                     .fill_max_size()
-                    .align_items(AlignItems::Center)
-                    .justify_content(JustifyContent::Center))
+                    .align_items(AlignItems::CENTER)
+                    .justify_content(JustifyContent::CENTER))
                 .child(icon(
                     torrent_state_symbol(torrent.stats.state),
                     25.0,
@@ -1311,7 +1311,7 @@ fn stat_card(
         .clip_rounded(16.0)
         .padding(14.0))
     .child(Column(Modifier::new().fill_max_size()).child((
-        Row(Modifier::new().align_items(AlignItems::Center)).child((
+        Row(Modifier::new().align_items(AlignItems::CENTER)).child((
             icon(symbol, 18.0, color),
             Box(Modifier::new().width(6.0)),
             Text(label.into()).size(11.0).color(th.on_surface_variant),
@@ -1552,8 +1552,8 @@ fn magnet_dialog_view(
             ),
             Box(Modifier::new().height(16.0)),
             Row(Modifier::new()
-                .align_items(AlignItems::Center)
-                .justify_content(JustifyContent::End))
+                .align_items(AlignItems::CENTER)
+                .justify_content(JustifyContent::END))
             .child((
                 TextButton(
                     Modifier::new(),
@@ -1634,8 +1634,8 @@ fn url_dialog_view(
             ),
             Box(Modifier::new().height(16.0)),
             Row(Modifier::new()
-                .align_items(AlignItems::Center)
-                .justify_content(JustifyContent::End))
+                .align_items(AlignItems::CENTER)
+                .justify_content(JustifyContent::END))
             .child((
                 TextButton(
                     Modifier::new(),
@@ -1743,7 +1743,7 @@ fn remove_dialog_view(
                 .size(14.0)
                 .color(th.on_surface_variant),
             Box(Modifier::new().height(12.0)),
-            Row(Modifier::new().align_items(AlignItems::Center)).child((
+            Row(Modifier::new().align_items(AlignItems::CENTER)).child((
                 Checkbox(
                     remove_delete_files.get(),
                     {
@@ -1758,8 +1758,8 @@ fn remove_dialog_view(
             )),
             Box(Modifier::new().height(16.0)),
             Row(Modifier::new()
-                .align_items(AlignItems::Center)
-                .justify_content(JustifyContent::End))
+                .align_items(AlignItems::CENTER)
+                .justify_content(JustifyContent::END))
             .child((
                 TextButton(
                     Modifier::new(),
@@ -1858,9 +1858,9 @@ fn settings_dialog_view(
         overlay,
         Modifier::new().max_width(540.0),
         DialogProperties::default(),
-        Column(Modifier::new().padding(24.0)).child((
+        Column(Modifier::new().padding(th.spacing.xl)).child((
             Text("\u{2699} Settings").size(18.0).color(th.on_surface),
-            Box(Modifier::new().height(12.0)),
+            Box(Modifier::new().height(th.spacing.md)),
             ScrollArea(
                 Modifier::new().fill_max_width().max_height(400.0),
                 {
@@ -1874,14 +1874,14 @@ fn settings_dialog_view(
                     let field_row = |label: &str, input: &Rc<Signal<String>>| {
                         Row(Modifier::new()
                             .fill_max_width()
-                            .align_items(AlignItems::Center))
+                            .align_items(AlignItems::CENTER))
                         .child((
                             Text(label)
                                 .size(12.0)
                                 .color(th.on_surface_variant)
                                 .modifier(Modifier::new().width(150.0)),
                             TextField(
-                                Modifier::new().flex_grow(1.0).height(28.0),
+                                Modifier::new().flex_grow(1.0),
                                 input.get(),
                                 {
                                     let s = input.clone();
@@ -1894,7 +1894,7 @@ fn settings_dialog_view(
                     let switch_row = |label: &str, val: bool, on_toggle: Rc<dyn Fn(bool)>| {
                         Row(Modifier::new()
                             .fill_max_width()
-                            .align_items(AlignItems::Center))
+                            .align_items(AlignItems::CENTER))
                         .child((
                             Text(label)
                                 .size(12.0)
@@ -1906,18 +1906,17 @@ fn settings_dialog_view(
 
                     // Network
                     views.push(Text("Network").size(16.0).color(th.on_surface));
-                    views.push(Box(Modifier::new().height(8.0)));
-                    views.push(Box(Modifier::new().height(4.0)));
+                    views.push(Box(Modifier::new().height(th.spacing.sm)));
                     views.push(field_row("Listen Port:", &listen_port_input));
-                    views.push(Box(Modifier::new().height(4.0)));
+                    views.push(Box(Modifier::new().height(th.spacing.sm)));
                     views.push(field_row("Max Connections:", &max_conn_input));
-                    views.push(Box(Modifier::new().height(4.0)));
+                    views.push(Box(Modifier::new().height(th.spacing.sm)));
                     views.push(field_row("Max Per Torrent:", &max_pt_input));
-                    views.push(Box(Modifier::new().height(4.0)));
+                    views.push(Box(Modifier::new().height(th.spacing.sm)));
                     views.push(field_row("Pipeline Depth:", &pipeline_input));
-                    views.push(Box(Modifier::new().height(4.0)));
+                    views.push(Box(Modifier::new().height(th.spacing.sm)));
                     views.push(field_row("Upload Slots:", &upload_slots_input));
-                    views.push(Box(Modifier::new().height(4.0)));
+                    views.push(Box(Modifier::new().height(th.spacing.sm)));
                     views.push(switch_row("Accept Incoming", cfg.accept_incoming, {
                         let c = config.clone();
                         Rc::new(move |v| {
@@ -1928,18 +1927,17 @@ fn settings_dialog_view(
                     }));
 
                     // Bandwidth
-                    views.push(Box(Modifier::new().height(12.0)));
+                    views.push(Box(Modifier::new().height(th.spacing.md)));
                     views.push(Text("Bandwidth").size(16.0).color(th.on_surface));
-                    views.push(Box(Modifier::new().height(8.0)));
-                    views.push(Box(Modifier::new().height(4.0)));
+                    views.push(Box(Modifier::new().height(th.spacing.sm)));
                     views.push(field_row("Max DL Rate (0=\u{221E}):", &max_dl_input));
-                    views.push(Box(Modifier::new().height(4.0)));
+                    views.push(Box(Modifier::new().height(th.spacing.sm)));
                     views.push(field_row("Max UL Rate (0=\u{221E}):", &max_ul_input));
 
                     // Storage
-                    views.push(Box(Modifier::new().height(12.0)));
+                    views.push(Box(Modifier::new().height(th.spacing.md)));
                     views.push(Text("Storage").size(16.0).color(th.on_surface));
-                    views.push(Box(Modifier::new().height(8.0)));
+                    views.push(Box(Modifier::new().height(th.spacing.sm)));
                     views.push(
                         Row(Modifier::new().fill_max_width()).child((
                             Text("Directory:").size(12.0).color(th.on_surface_variant),
@@ -1948,9 +1946,9 @@ fn settings_dialog_view(
                                 .color(th.on_surface),
                         )),
                     );
-                    views.push(Box(Modifier::new().height(4.0)));
+                    views.push(Box(Modifier::new().height(th.spacing.sm)));
                     views.push(field_row("Cache Size (MB):", &cache_input));
-                    views.push(Box(Modifier::new().height(4.0)));
+                    views.push(Box(Modifier::new().height(th.spacing.sm)));
                     views.push(switch_row("Preallocate Files", cfg.prealloc_files, {
                         let c = config.clone();
                         Rc::new(move |v| {
@@ -1961,9 +1959,9 @@ fn settings_dialog_view(
                     }));
 
                     // Features
-                    views.push(Box(Modifier::new().height(12.0)));
+                    views.push(Box(Modifier::new().height(th.spacing.md)));
                     views.push(Text("Features").size(16.0).color(th.on_surface));
-                    views.push(Box(Modifier::new().height(8.0)));
+                    views.push(Box(Modifier::new().height(th.spacing.sm)));
                     views.push(switch_row("DHT", cfg.dht_enabled, {
                         let c = config.clone();
                         Rc::new(move |v| {
@@ -1972,6 +1970,7 @@ fn settings_dialog_view(
                             c.set(nc);
                         })
                     }));
+                    views.push(Box(Modifier::new().height(th.spacing.sm)));
                     views.push(switch_row("UPnP", cfg.upnp_enabled, {
                         let c = config.clone();
                         Rc::new(move |v| {
@@ -1980,6 +1979,7 @@ fn settings_dialog_view(
                             c.set(nc);
                         })
                     }));
+                    views.push(Box(Modifier::new().height(th.spacing.sm)));
                     views.push(switch_row("PEX", cfg.pex_enabled, {
                         let c = config.clone();
                         Rc::new(move |v| {
@@ -1988,6 +1988,7 @@ fn settings_dialog_view(
                             c.set(nc);
                         })
                     }));
+                    views.push(Box(Modifier::new().height(th.spacing.sm)));
                     views.push(switch_row("Webseed", cfg.webseed_enabled, {
                         let c = config.clone();
                         Rc::new(move |v| {
@@ -1996,6 +1997,7 @@ fn settings_dialog_view(
                             c.set(nc);
                         })
                     }));
+                    views.push(Box(Modifier::new().height(th.spacing.sm)));
                     views.push(switch_row("Endgame Mode", cfg.endgame_mode, {
                         let c = config.clone();
                         Rc::new(move |v| {
@@ -2004,6 +2006,7 @@ fn settings_dialog_view(
                             c.set(nc);
                         })
                     }));
+                    views.push(Box(Modifier::new().height(th.spacing.sm)));
                     views.push(switch_row("Auto Resume", cfg.auto_resume, {
                         let c = config.clone();
                         Rc::new(move |v| {
@@ -2012,6 +2015,8 @@ fn settings_dialog_view(
                             c.set(nc);
                         })
                     }));
+                    #[cfg(not(target_os = "android"))]
+                    views.push(Box(Modifier::new().height(th.spacing.sm)));
                     #[cfg(not(target_os = "android"))]
                     views.push(switch_row("Minimize on launch", cfg.minimize_to_tray, {
                         let c = config.clone();
@@ -2023,9 +2028,9 @@ fn settings_dialog_view(
                     }));
 
                     // Seeding
-                    views.push(Box(Modifier::new().height(12.0)));
+                    views.push(Box(Modifier::new().height(th.spacing.md)));
                     views.push(Text("Seeding").size(16.0).color(th.on_surface));
-                    views.push(Box(Modifier::new().height(8.0)));
+                    views.push(Box(Modifier::new().height(th.spacing.sm)));
                     views.push(switch_row("Seed Ratio Limit", cfg.seed_ratio_enabled, {
                         let c = config.clone();
                         Rc::new(move |v| {
@@ -2034,25 +2039,24 @@ fn settings_dialog_view(
                             c.set(nc);
                         })
                     }));
-                    views.push(Box(Modifier::new().height(4.0)));
+                    views.push(Box(Modifier::new().height(th.spacing.sm)));
                     views.push(field_row("Ratio:", &seed_ratio_input));
 
                     // Advanced
-                    views.push(Box(Modifier::new().height(12.0)));
+                    views.push(Box(Modifier::new().height(th.spacing.md)));
                     views.push(Text("Advanced").size(16.0).color(th.on_surface));
-                    views.push(Box(Modifier::new().height(8.0)));
-                    views.push(Box(Modifier::new().height(4.0)));
+                    views.push(Box(Modifier::new().height(th.spacing.sm)));
                     views.push(field_row("Choke Interval (s):", &choke_input));
-                    views.push(Box(Modifier::new().height(4.0)));
+                    views.push(Box(Modifier::new().height(th.spacing.sm)));
                     views.push(field_row("Opt. Unchoke Interval (s):", &unchoke_input));
 
                     views
                 }),
             ),
-            Box(Modifier::new().height(16.0)),
+            Box(Modifier::new().height(th.spacing.lg)),
             Row(Modifier::new()
-                .align_items(AlignItems::Center)
-                .justify_content(JustifyContent::End))
+                .align_items(AlignItems::CENTER)
+                .justify_content(JustifyContent::END))
             .child((
                 TextButton(
                     Modifier::new(),
@@ -2339,7 +2343,7 @@ fn add_torrent_dialog_view(
             body.push(
                 Row(Modifier::new()
                     .fill_max_width()
-                    .align_items(AlignItems::Center))
+                    .align_items(AlignItems::CENTER))
                 .child((
                     icon(Symbols::CLOUD_DOWNLOAD, 22.0, th.primary),
                     Box(Modifier::new().width(10.0)),
@@ -2370,7 +2374,7 @@ fn add_torrent_dialog_view(
             body.push(
                 Row(Modifier::new()
                     .fill_max_width()
-                    .align_items(AlignItems::Center))
+                    .align_items(AlignItems::CENTER))
                 .child((
                     Text("Download to:")
                         .size(12.0)
@@ -2398,7 +2402,7 @@ fn add_torrent_dialog_view(
             body.push(
                 Row(Modifier::new()
                     .fill_max_width()
-                    .align_items(AlignItems::Center))
+                    .align_items(AlignItems::CENTER))
                 .child((
                     Text("Files:").size(12.0).color(th.on_surface_variant),
                     Spacer(),
@@ -2433,18 +2437,18 @@ fn add_torrent_dialog_view(
             body.push(Box(Modifier::new().height(16.0)));
             body.push(
                 Row(Modifier::new()
-                    .align_items(AlignItems::Center)
-                    .justify_content(JustifyContent::End))
+                    .align_items(AlignItems::CENTER)
+                    .justify_content(JustifyContent::END))
                 .child((
                     TextButton(
                         Modifier::new(),
                         move || on_cancel(),
                         ButtonConfig::default(),
-                        || Text("Cancel"),
-                    ),
-                    Box(Modifier::new().width(8.0)),
-                    Button(
-                        Modifier::new(),
+                    || Text("Cancel"),
+                ),
+                Box(Modifier::new().width(th.spacing.sm)),
+                Button(
+                    Modifier::new(),
                         move || on_confirm(),
                         ButtonConfig::default(),
                         || Text("Add"),
@@ -2494,7 +2498,7 @@ fn add_file_row_view(
             bottom: 4.0,
         })
         .column_gap(8.0)
-        .align_items(AlignItems::Center))
+        .align_items(AlignItems::CENTER))
     .child((
         Checkbox(
             checked,

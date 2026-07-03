@@ -28,7 +28,7 @@ pub fn progress_bar_view(progress: f32, state: TorrentState) -> View {
         Row(Modifier::new()
             .fill_max_width()
             .height(16.0)
-            .align_items(AlignItems::Center))
+            .align_items(AlignItems::CENTER))
         .child(Text(label).size(11.0).color(th.on_surface_variant)),
         LinearProgressIndicator(
             Some(progress.clamp(0.0, 1.0)),
@@ -145,8 +145,8 @@ pub fn piece_map_view(have: &[bool]) -> View {
             Box(Modifier::new()
                 .fill_max_size()
                 .padding(edge_padding)
-                .align_items(AlignItems::Center)
-                .justify_content(JustifyContent::Center))
+                .align_items(AlignItems::CENTER)
+                .justify_content(JustifyContent::CENTER))
             .child(Column(Modifier::new().size(grid_w, grid_h)).child(row_views))
         },
     )
