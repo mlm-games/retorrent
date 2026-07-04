@@ -62,7 +62,7 @@ pub fn piece_map_view(have: &[bool]) -> View {
         move |scope| {
             let n = have_data.len();
 
-            let edge_padding = 8.0;
+            let edge_padding = 16.0;
             let spacing = 1.0;
             let min_piece_size = 3.0;
 
@@ -71,7 +71,7 @@ pub fn piece_map_view(have: &[bool]) -> View {
             }
 
             let available_w = scope.max_width.max(0.0);
-            let available_h = (scope.max_height / 2.0).max(0.0); // HACK: goes offscreen to the bottom without this
+            let available_h = scope.max_height.max(0.0);
 
             if available_w < min_piece_size || available_h < min_piece_size {
                 return Box(Modifier::new().fill_max_size());
