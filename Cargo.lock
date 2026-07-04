@@ -3276,9 +3276,9 @@ checksum = "19b30a45b0cd0bcca8037f3d0dc3421eaf95327a17cad11964fb8179b4fc4832"
 
 [[package]]
 name = "repose-core"
-version = "0.21.3"
+version = "0.21.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1a9c54134a1159502e1773eafd24126c62654d66a68977cdfabc06082b939660"
+checksum = "bc6eec44feb2ecd7fcfa8317e02adb50593a021f257b93ae887ab60e397e8578"
 dependencies = [
  "bitflags 2.13.0",
  "log",
@@ -3294,9 +3294,9 @@ dependencies = [
 
 [[package]]
 name = "repose-devtools"
-version = "0.21.3"
+version = "0.21.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a6350758511058620cf2357fae857e7cbf4de22070eada8f3e2e6cf9601b0c72"
+checksum = "d6d09a2df094503800ffd0489553bdd14525d1732175e46b28311b38ad3e2a3c"
 dependencies = [
  "log",
  "repose-core",
@@ -3305,9 +3305,9 @@ dependencies = [
 
 [[package]]
 name = "repose-macros"
-version = "0.21.3"
+version = "0.21.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0ecd3ac0781459cf166550ce3cc0d3e3b4e59a8ed955bf1a0f6a6514d9901d43"
+checksum = "9376dafba7f2d38fac739afd2d14ef6b653050c6eac91d506c687bceb228f154"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -3316,9 +3316,9 @@ dependencies = [
 
 [[package]]
 name = "repose-material"
-version = "0.21.3"
+version = "0.21.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fcca11b5ebf9f6a281591adf93f43be3d9e86c9fcef9c0114b05d6ed32790ce8"
+checksum = "be5073536e9a2ae5d3d9876bf5f5de43de581507fbdcfb1c3cf6a303abe886e8"
 dependencies = [
  "repose-core",
  "repose-text",
@@ -3328,9 +3328,9 @@ dependencies = [
 
 [[package]]
 name = "repose-navigation"
-version = "0.21.3"
+version = "0.21.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "926e2e007c214c4936bb6e49ad1f00b1f07b399f2200032be28cc62fb34e2887"
+checksum = "6fead255e6bda12a1491bb983c3e56fd2f5cec70f4642cc9855094a12bea2fef"
 dependencies = [
  "log",
  "repose-core",
@@ -3341,9 +3341,9 @@ dependencies = [
 
 [[package]]
 name = "repose-platform"
-version = "0.21.3"
+version = "0.21.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "13505bc31b59d0cba478d304e2a70a53b84f9d259cbfd8e32b0f1495f069375a"
+checksum = "30dc95a70397f16d99cc74705cd36ab5195ab97846cdada5c723bb067691c71e"
 dependencies = [
  "accesskit",
  "accesskit_winit",
@@ -3370,9 +3370,9 @@ dependencies = [
 
 [[package]]
 name = "repose-render-wgpu"
-version = "0.21.3"
+version = "0.21.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cc8d9596241fdf80a0fb4efddb21fa9e4a9d27e3c74c17df5ddc9d129267c785"
+checksum = "e54eaed0af8a5e141efe0234d3720f72f47be8617423fdc75fae4696ae7b3a58"
 dependencies = [
  "ab_glyph",
  "anyhow",
@@ -3392,9 +3392,9 @@ dependencies = [
 
 [[package]]
 name = "repose-text"
-version = "0.21.3"
+version = "0.21.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "82cf707d120adc23185c5791ccb748fae1a246249d5f854274246c9f4bfa7610"
+checksum = "44f8334331f65d1c7fec47f08e7a79759ed12f8412273e9ff8b88420126938c5"
 dependencies = [
  "cosmic-text",
  "fontdb",
@@ -3405,9 +3405,9 @@ dependencies = [
 
 [[package]]
 name = "repose-tree"
-version = "0.21.3"
+version = "0.21.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "67caba052059cd8943b359c8b52919a4350258d4780cf16d6a427021f93f34cc"
+checksum = "e838cb8b24ae8375e268512a9bab5b2903ba078490ad6b30a679388c981d6a7d"
 dependencies = [
  "log",
  "rapidhash",
@@ -3419,9 +3419,9 @@ dependencies = [
 
 [[package]]
 name = "repose-ui"
-version = "0.21.3"
+version = "0.21.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e7d2e3c1a7e81958c6db3e6bbd37d05a0a0baf7704bcd533fcdfd7f1ee26478a"
+checksum = "4bde8338a4a54e30e8fbf19615787cbbbeeb12c02741dc5c7d7cc61baa89a46d"
 dependencies = [
  "ab_glyph",
  "fontdb",
@@ -3434,6 +3434,7 @@ dependencies = [
  "taffy",
  "unicode-segmentation",
  "web-time",
+ "webbrowser",
 ]
 
 [[package]]
@@ -4457,7 +4458,7 @@ dependencies = [
 [[package]]
 name = "tray-icon"
 version = "0.24.1"
-source = "git+https://github.com/mlm-games/tray-icon#73e36a63df9e9b304d84f7e1ee25c981ee005e24"
+source = "git+https://github.com/mlm-games/tray-icon#a639963409c27375ea4bdf56aba04c2864ae407f"
 dependencies = [
  "crossbeam-channel",
  "muda",
@@ -4830,6 +4831,22 @@ checksum = "5a6580f308b1fad9207618087a65c04e7a10bc77e02c8e84e9b00dd4b12fa0bb"
 dependencies = [
  "js-sys",
  "wasm-bindgen",
+]
+
+[[package]]
+name = "webbrowser"
+version = "1.2.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0fc95580916af1e68ff6a7be07446fc5db73ebf71cf092de939bbf5f7e189f72"
+dependencies = [
+ "core-foundation 0.10.1",
+ "jni",
+ "log",
+ "ndk-context",
+ "objc2 0.6.4",
+ "objc2-foundation 0.3.2",
+ "url",
+ "web-sys",
 ]
 
 [[package]]
