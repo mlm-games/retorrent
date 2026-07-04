@@ -117,7 +117,12 @@ fn show_snackbar(snackbar: &SnackbarController, msg: String) {
         action: None,
         duration_ms: 4000,
         builder: Rc::new(move || {
-            SnackbarView(msg.clone(), None::<SnackbarAction>, Modifier::new(), SnackbarConfig::default())
+            SnackbarView(
+                msg.clone(),
+                None::<SnackbarAction>,
+                Modifier::new(),
+                SnackbarConfig::default(),
+            )
         }),
     });
 }
@@ -371,8 +376,7 @@ pub fn app(
         .enumerate()
         .filter(|(_, t)| {
             let state_match = matches_filter(t, filter);
-            let query_match =
-                query.is_empty() || t.name.to_lowercase().contains(&query_lower);
+            let query_match = query.is_empty() || t.name.to_lowercase().contains(&query_lower);
             state_match && query_match
         })
         .map(|(i, _)| i)
@@ -583,7 +587,12 @@ fn top_bar_view(
                 let ss = settings_state.clone();
                 let ads = add_state.clone();
                 move || {
-                    if ms.is_visible() || us.is_visible() || rs.is_visible() || ss.is_visible() || ads.is_visible() {
+                    if ms.is_visible()
+                        || us.is_visible()
+                        || rs.is_visible()
+                        || ss.is_visible()
+                        || ads.is_visible()
+                    {
                         return;
                     }
                     let pending_from_button = pending_from_button.clone();
@@ -672,9 +681,15 @@ fn top_bar_view(
                                                             });
                                                         }
                                                     }
-                                                    Err(e) => push_error(format!("Failed to parse torrent: {}", e)),
+                                                    Err(e) => push_error(format!(
+                                                        "Failed to parse torrent: {}",
+                                                        e
+                                                    )),
                                                 },
-                                                Err(e) => push_error(format!("Failed to read temp file: {}", e)),
+                                                Err(e) => push_error(format!(
+                                                    "Failed to read temp file: {}",
+                                                    e
+                                                )),
                                             }
                                             let _ = std::fs::remove_file(&temp_path);
                                         }
@@ -709,7 +724,12 @@ fn top_bar_view(
                 let ss = settings_state.clone();
                 let ads = add_state.clone();
                 move || {
-                    if ms.is_visible() || us.is_visible() || rs.is_visible() || ss.is_visible() || ads.is_visible() {
+                    if ms.is_visible()
+                        || us.is_visible()
+                        || rs.is_visible()
+                        || ss.is_visible()
+                        || ads.is_visible()
+                    {
                         return;
                     }
                     s.show()
@@ -737,7 +757,12 @@ fn top_bar_view(
                 let ss = settings_state.clone();
                 let ads = add_state.clone();
                 move || {
-                    if ms.is_visible() || us.is_visible() || rs.is_visible() || ss.is_visible() || ads.is_visible() {
+                    if ms.is_visible()
+                        || us.is_visible()
+                        || rs.is_visible()
+                        || ss.is_visible()
+                        || ads.is_visible()
+                    {
                         return;
                     }
                     s.show();
@@ -795,7 +820,12 @@ fn top_bar_view(
                 let ss = settings_state.clone();
                 let ads = add_state.clone();
                 move || {
-                    if ms.is_visible() || us.is_visible() || rs.is_visible() || ss.is_visible() || ads.is_visible() {
+                    if ms.is_visible()
+                        || us.is_visible()
+                        || rs.is_visible()
+                        || ss.is_visible()
+                        || ads.is_visible()
+                    {
                         return;
                     }
                     if selected.get().is_some() {
@@ -818,7 +848,12 @@ fn top_bar_view(
                 let ss = settings_state.clone();
                 let ads = add_state.clone();
                 move || {
-                    if ms.is_visible() || us.is_visible() || rs.is_visible() || ss.is_visible() || ads.is_visible() {
+                    if ms.is_visible()
+                        || us.is_visible()
+                        || rs.is_visible()
+                        || ss.is_visible()
+                        || ads.is_visible()
+                    {
                         return;
                     }
                     s.show()
@@ -1027,7 +1062,10 @@ fn torrent_card_view(
                 .child((
                     icon(state_symbol, 20.0, state_color),
                     Box(Modifier::new().width(8.0)),
-                    Text(&torrent.name).size(14.0).color(th.on_surface).overflow_ellipsize(),
+                    Text(&torrent.name)
+                        .size(14.0)
+                        .color(th.on_surface)
+                        .overflow_ellipsize(),
                     Spacer(),
                     Text(format_bytes(torrent.total_size))
                         .size(11.0)
@@ -1385,7 +1423,7 @@ fn files_tab_view(torrent: &TorrentRow, _info_hash: InfoHash, _engine: Arc<Torre
                     Text("File")
                         .size(12.0)
                         .color(th.on_surface)
-                        .modifier(Modifier::new().flex_grow(1.0)),
+                        .modifier(Modifier::new().flex_grow(1.0).flex_basis(0.0)),
                     Text("Size")
                         .size(12.0)
                         .color(th.on_surface)
@@ -1393,7 +1431,7 @@ fn files_tab_view(torrent: &TorrentRow, _info_hash: InfoHash, _engine: Arc<Torre
                     Text("Progress")
                         .size(12.0)
                         .color(th.on_surface)
-                        .modifier(Modifier::new().flex_grow(2.0)),
+                        .modifier(Modifier::new().flex_grow(2.0).flex_basis(0.0)),
                     Text("Priority")
                         .size(12.0)
                         .color(th.on_surface)
@@ -1436,12 +1474,20 @@ fn files_tab_view(torrent: &TorrentRow, _info_hash: InfoHash, _engine: Arc<Torre
                         Text(display_name)
                             .size(11.0)
                             .color(th.on_surface)
-                            .modifier(Modifier::new().flex_grow(1.0)),
+                            .single_line()
+                            .overflow_ellipsize()
+                            .modifier(
+                                Modifier::new()
+                                    .flex_grow(1.0)
+                                    .flex_basis(0.0)
+                                    .min_width(0.0),
+                            ),
                         Text(format_bytes(file.length))
                             .size(11.0)
                             .color(th.on_surface)
                             .modifier(Modifier::new().width(80.0)),
-                        file_progress_view(file_progress, state),
+                        Box(Modifier::new().flex_grow(2.0).flex_basis(0.0))
+                            .child(file_progress_view(file_progress, state)),
                         Text(current_prio.to_string())
                             .size(11.0)
                             .color(th.on_surface)
@@ -1685,7 +1731,10 @@ fn url_dialog_view(
                                                     }
                                                 }
                                                 Err(e) => {
-                                                    let msg = format!("Failed to parse torrent from URL: {}", e);
+                                                    let msg = format!(
+                                                        "Failed to parse torrent from URL: {}",
+                                                        e
+                                                    );
                                                     tracing::error!("{}", msg);
                                                     if let Ok(mut errors) = errors.lock() {
                                                         errors.push(msg);
@@ -1694,7 +1743,8 @@ fn url_dialog_view(
                                             }
                                         }
                                         Err(e) => {
-                                            let msg = format!("Failed to read response body: {}", e);
+                                            let msg =
+                                                format!("Failed to read response body: {}", e);
                                             tracing::error!("{}", msg);
                                             if let Ok(mut errors) = errors.lock() {
                                                 errors.push(msg);
@@ -1887,7 +1937,7 @@ fn settings_dialog_view(
                                     let s = input.clone();
                                     move |v| s.set(v)
                                 },
-            Default::default(),
+                                Default::default(),
                             ),
                         ))
                     };
@@ -2308,7 +2358,9 @@ fn add_torrent_dialog_view(
                                 engine.start_torrent(&info_hash, &rt);
                                 tracing::info!("Added torrent: {}", info_hash);
                             }
-                            Err(e) => show_snackbar(&snackbar, format!("Failed to add torrent: {}", e)),
+                            Err(e) => {
+                                show_snackbar(&snackbar, format!("Failed to add torrent: {}", e))
+                            }
                         }
                     }
                     let has_more = advance();
@@ -2387,7 +2439,7 @@ fn add_torrent_dialog_view(
                             let p = download_path_input.clone();
                             move |v| p.set(v)
                         },
-                Default::default(),
+                        Default::default(),
                     ),
                     Box(Modifier::new().width(6.0)),
                     FilledTonalButton(
@@ -2444,11 +2496,11 @@ fn add_torrent_dialog_view(
                         Modifier::new(),
                         move || on_cancel(),
                         ButtonConfig::default(),
-                    || Text("Cancel"),
-                ),
-                Box(Modifier::new().width(th.spacing.sm)),
-                Button(
-                    Modifier::new(),
+                        || Text("Cancel"),
+                    ),
+                    Box(Modifier::new().width(th.spacing.sm)),
+                    Button(
+                        Modifier::new(),
                         move || on_confirm(),
                         ButtonConfig::default(),
                         || Text("Add"),
