@@ -49,6 +49,9 @@ name = "android.permission.FOREGROUND_SERVICE"
 name = "android.permission.FOREGROUND_SERVICE_DATA_SYNC"
 
 [[package.metadata.android.uses_permission]]
+name = "android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK"
+
+[[package.metadata.android.uses_permission]]
 name = "android.permission.POST_NOTIFICATIONS"
 
 [[package.metadata.android.uses_permission]]
@@ -93,7 +96,7 @@ scheme = "magnet"
 
 [[package.metadata.android.application.service]]
 name = "org.mlm.retorrent.TorrentService"
-foreground_service_type = "dataSync"
+foreground_service_type = "dataSync|mediaPlayback"
 exported = false
 
 [dependencies]
