@@ -93,7 +93,6 @@ pub fn run_headless(engine: Arc<TorrentEngine>, rt: Arc<tokio::runtime::Runtime>
     Ok(())
 }
 
-#[cfg(feature = "desktop-bin")]
 pub fn run_desktop_main() -> Result<()> {
     use std::sync::mpsc;
     use tracing_subscriber::{EnvFilter, fmt};

@@ -1,5 +1,6 @@
 [package]
 name = "retorrent"
+default-run = "retorrent-desktop"
 version = "0.3.3"
 edition = "2024"
 resolver = "3"
@@ -9,14 +10,9 @@ license = "AGPL-3.0"
 name = "retorrent"
 crate-type = ["cdylib", "rlib"]
 
-[features]
-default = []
-desktop-bin = []
-
 [[bin]]
-name = "retorrent"
+name = "retorrent-desktop"
 path = "src/main.rs"
-required-features = ["desktop-bin"]
 
 [package.metadata.android]
 package = "org.mlm.retorrent"

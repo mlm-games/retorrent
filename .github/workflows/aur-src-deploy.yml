@@ -49,12 +49,12 @@ jobs:
 
           build() {
             cd "${srcdir}/${pkgname}-${pkgver}"
-            cargo build --release --locked --features desktop-bin
+            cargo build --release --locked
           }
 
           package() {
             cd "${srcdir}/${pkgname}-${pkgver}"
-            install -Dm755 "target/release/retorrent" "${pkgdir}/usr/bin/retorrent"
+            install -Dm755 "target/release/retorrent-desktop" "${pkgdir}/usr/bin/retorrent"
 
             install -Dm644 /dev/stdin "${pkgdir}/usr/share/applications/retorrent.desktop" << DESKTOP_EOF
           [Desktop Entry]
