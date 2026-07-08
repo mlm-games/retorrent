@@ -141,8 +141,8 @@ jobs:
         include:
           - os: ubuntu-latest
             target: ""
-          - os: ubuntu-latest
-            target: "aarch64-unknown-linux-gnu"
+          - os: ubuntu-26.04-arm
+            target: ""
           - os: macos-latest
             target: ""
           - os: windows-latest
@@ -157,41 +157,12 @@ jobs:
         if: matrix.target != ''
         run: rustup target add ${{ matrix.target }}
 
-      - name: Install Linux dependencies (host)
-        if: runner.os == 'Linux' && matrix.target == ''
+      - name: Install Linux dependencies
+        if: runner.os == 'Linux'
         run: |
           sudo apt-get update
           sudo apt-get install -y \
             libxdo-dev libudev-dev pkg-config
-
-      - name: Install Linux cross dependencies (aarch64)
-        if: runner.os == 'Linux' && matrix.target == 'aarch64-unknown-linux-gnu'
-        shell: bash
-        run: |
-          set -eux
-          sudo dpkg --add-architecture arm64
-
-          cat <<'EOF' | sudo tee /etc/apt/sources.list.d/ubuntu-arm64.sources
-          Types: deb
-          URIs: http://ports.ubuntu.com/ubuntu-ports
-          Suites: noble noble-updates noble-backports noble-security
-          Components: main restricted universe multiverse
-          Architectures: arm64
-          EOF
-          sudo sed -Ei 's|^Types: deb|Types: deb\nArchitectures: amd64|' \
-              /etc/apt/sources.list.d/ubuntu.sources
-
-          sudo apt-get update
-          sudo apt-get install -y \
-            gcc-aarch64-linux-gnu pkg-config \
-            libxdo-dev:arm64 libudev-dev:arm64
-
-          sudo apt-get install -y pkgconf
-          echo 'PKG_CONFIG=aarch64-linux-gnu-pkg-config' >> "$GITHUB_ENV"
-          echo 'PKG_CONFIG_ALLOW_CROSS=1'                >> "$GITHUB_ENV"
-          echo 'PKG_CONFIG_SYSROOT_DIR=/'               >> "$GITHUB_ENV"
-          echo 'PKG_CONFIG_LIBDIR=/usr/lib/aarch64-linux-gnu/pkgconfig:/usr/share/pkgconfig' >> "$GITHUB_ENV"
-          echo 'PKG_CONFIG_PATH=/usr/lib/aarch64-linux-gnu/pkgconfig:/usr/share/pkgconfig'   >> "$GITHUB_ENV"
 
       - name: Configure pkg-config (macOS)
         if: runner.os == 'macOS'
