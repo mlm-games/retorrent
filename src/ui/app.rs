@@ -2311,8 +2311,10 @@ fn add_torrent_dialog_view(
                                 .await
                                 {
                                     Ok(Some(dir)) => {
-                                        if let Ok(mut p) = pending.lock() {
-                                            *p = Some(dir.path().to_path_buf());
+                                        if let Some(path) = dir.path() {
+                                            if let Ok(mut p) = pending.lock() {
+                                                *p = Some(path.to_path_buf());
+                                            }
                                         }
                                     }
                                     Ok(None) => {}
