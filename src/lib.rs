@@ -93,6 +93,7 @@ pub fn run_headless(engine: Arc<TorrentEngine>, rt: Arc<tokio::runtime::Runtime>
     Ok(())
 }
 
+#[cfg(all(not(target_os = "android"), not(target_arch = "wasm32")))]
 pub fn run_desktop_main() -> Result<()> {
     use std::sync::mpsc;
     use tracing_subscriber::{EnvFilter, fmt};
@@ -319,18 +320,23 @@ pub extern "C" fn android_main(android_app: winit::platform::android::activity::
         .unwrap_or_else(|_| PathBuf::from("/data/data/org.mlm.retorrent"));
     config::ANDROID_DATA_DIR.set(android_data_dir.clone()).ok();
 
-    // Read the launch intent saved by RetorrentActivity.onCreate to a file.
-    let pending_intent_path = android_data_dir.join("pending_intent");
-    if pending_intent_path.exists() {
-        match std::fs::read(&pending_intent_path) {
-            Ok(bytes) => {
-                repose_platform::push_deeplink(bytes);
-                let _ = std::fs::remove_file(&pending_intent_path);
-                tracing::info!("init_deeplink: pushed launch intent from file");
-            }
-            Err(e) => tracing::error!("init_deeplink: failed to read file: {e}"),
-        }
+    // Read the launch intent saved by RlobKitMainActivity.onCreate.
+    if let Some(intent) = rlobkit_app_events::take_pending_intent(&android_data_dir) {
+        repose_platform::push_deeplink(intent.data);
+        tracing::info!("init_deeplink: pushed launch intent from file");
     }
+
+    // Forward window insets from RlobKitMainActivity into repose's layout system.
+    rlobkit_app_events::insets::set_on_insets(Box::new(|insets| {
+        let r = repose_core::locals::WindowInsets {
+            top: insets.top,
+            bottom: insets.bottom,
+            left: insets.left,
+            right: insets.right,
+            ime_bottom: insets.ime_bottom,
+        };
+        repose_core::locals::set_window_insets_default(r);
+    }));
 
     let download_dir = {
         let dir = jni_min_helper::jni_with_env(|env| -> Result<PathBuf, jni::errors::Error> {
@@ -483,7 +489,14 @@ pub extern "C" fn android_main(android_app: winit::platform::android::activity::
 
     use repose_platform::android::run_android_app;
 
+    let data_dir = android_data_dir.clone();
     let _ = run_android_app(android_app, move |sched, _rc| {
+        // Poll for warm intents delivered via onNewIntent → captureViewIntent.
+        let data_dir = data_dir.clone();
+        if let Some(intent) = rlobkit_app_events::take_pending_intent(&data_dir) {
+            tracing::info!("warm deeplink: {} bytes", intent.data.len());
+            repose_platform::push_deeplink(intent.data);
+        }
         ui::app::app(sched, engine.clone(), rt.clone(), pending.clone())
     });
 

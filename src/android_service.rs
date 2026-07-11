@@ -454,41 +454,4 @@ pub fn drain_pending_intents() -> Vec<PendingTorrent> {
     std::mem::take(&mut *storage.lock().unwrap())
 }
 
-#[unsafe(no_mangle)]
-pub extern "system" fn Java_org_mlm_retorrent_RetorrentActivity_nativeOnNewIntent<'local>(
-    mut env: jni::EnvUnowned<'local>,
-    _class: jni::sys::jclass,
-    data: jbyteArray,
-) {
-    env.with_env(|env| -> errors::Result<()> {
-        let array = unsafe { JByteArray::from_raw(env, data) };
-        let bytes = env.convert_byte_array(&array)?;
-        tracing::info!(
-            "nativeOnNewIntent: forwarding {} bytes to repose deeplink API",
-            bytes.len()
-        );
-        repose_platform::push_deeplink(bytes);
-        Ok(())
-    })
-    .resolve::<ThrowRuntimeExAndDefault>()
-}
 
-#[unsafe(no_mangle)]
-pub extern "system" fn Java_org_mlm_retorrent_RetorrentActivity_nativeOnWindowInsets<'local>(
-    _env: jni::EnvUnowned<'local>,
-    _class: jni::sys::jclass,
-    top_px: jni::sys::jfloat,
-    bottom_px: jni::sys::jfloat,
-    left_px: jni::sys::jfloat,
-    right_px: jni::sys::jfloat,
-    ime_bottom_px: jni::sys::jfloat,
-) {
-    let insets = repose_core::locals::WindowInsets {
-        top: top_px,
-        bottom: bottom_px,
-        left: left_px,
-        right: right_px,
-        ime_bottom: ime_bottom_px,
-    };
-    repose_core::locals::set_window_insets_default(insets);
-}

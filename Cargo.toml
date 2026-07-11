@@ -54,7 +54,7 @@ name = "android.permission.POST_NOTIFICATIONS"
 name = "android.permission.WAKE_LOCK"
 
 [[package.metadata.android.application.activity]]
-name = "org.mlm.retorrent.RetorrentActivity"
+name = "rust.rlobkit.RlobKitMainActivity"
 exported = true
 launch_mode = "singleTask"
 
@@ -135,7 +135,7 @@ urlencoding = "2"
 hex = "0.4"
 web-time = "1"
 igd-next = "0.17"
-rlobkit-dialogs = "0.2.3"
+rlobkit-dialogs = "0.5"
 
 
 # rlobkit-dialogs = { path = "../rlobkit/rlobkit-dialogs" }
@@ -182,6 +182,8 @@ jni = "0.22.4"
 jni-min-helper = "0.4"
 ndk-context = "0.1"
 rustls-platform-verifier = "0.7"
+# rlobkit-app-events = { path = "../rlobkit/rlobkit-app-events", features = ["jni-bridge"] }
+rlobkit-app-events = { version = "0.5", features = ["jni-bridge"] }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 wasm-bindgen = "0.2"
