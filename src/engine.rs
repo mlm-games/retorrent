@@ -9,7 +9,9 @@ use dashmap::DashMap;
 use std::fs::create_dir_all;
 use std::net::SocketAddr;
 use std::path::PathBuf;
+use std::sync::atomic::Ordering;
 use std::sync::{Arc, RwLock, RwLockReadGuard, RwLockWriteGuard};
+use std::time::Duration;
 use tokio::net::TcpListener;
 use tokio_util::sync::CancellationToken;
 
@@ -20,6 +22,7 @@ pub struct TorrentEngine {
     pub sessions: Arc<DashMap<InfoHash, Arc<TorrentSession>>>,
     pub dht: Option<Arc<DhtNode>>,
     pub cancellation_token: CancellationToken,
+    rt: tokio::runtime::Handle,
 }
 
 impl TorrentEngine {
@@ -57,7 +60,28 @@ impl TorrentEngine {
             sessions: Arc::new(DashMap::new()),
             dht,
             cancellation_token: CancellationToken::new(),
+            rt: tokio::runtime::Handle::current(),
         };
+
+        // Global download queue: periodically (re)enforce `max_active_downloads`.
+        // Running inside `TorrentEngine::new` (which is awaited within the app
+        // runtime) lets us `tokio::spawn` a self-rescheduling loop.
+        if engine.config_read().max_active_downloads > 0 {
+            let qe = engine.clone();
+            let cancel = engine.cancellation_token.clone();
+            tokio::spawn(async move {
+                let mut tick = tokio::time::interval(Duration::from_secs(5));
+                tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+                loop {
+                    tokio::select! {
+                        _ = cancel.cancelled() => break,
+                        _ = tick.tick() => {
+                            qe.enforce_queue_with_handle(&qe.rt);
+                        }
+                    }
+                }
+            });
+        }
 
         if engine.config_read().upnp_enabled {
             let cancel = engine.cancellation_token.clone();
@@ -231,11 +255,17 @@ impl TorrentEngine {
     }
 
     pub fn start_torrent(&self, info_hash: &InfoHash, rt: &tokio::runtime::Runtime) {
+        self.spawn_start(info_hash, rt.handle());
+    }
+
+    /// Spawn the session's worker loops onto `handle`. Safe to call multiple
+    /// times: `TorrentSession::start` guards against double-starts.
+    fn spawn_start(&self, info_hash: &InfoHash, handle: &tokio::runtime::Handle) {
         if let Some(session) = self.sessions.get(info_hash) {
             let session = session.value().clone();
             let max_peers = self.config_read().max_connections_per_torrent;
             let dht = self.dht.clone();
-            rt.spawn(async move {
+            handle.spawn(async move {
                 session.start(max_peers, dht).await;
             });
         }
@@ -243,6 +273,8 @@ impl TorrentEngine {
 
     pub fn pause_torrent(&self, info_hash: &InfoHash) {
         if let Some(session) = self.sessions.get(info_hash) {
+            // A user pause overrides any queue-imposed pause.
+            session.set_queue_paused(false);
             session.pause();
         }
     }
@@ -252,6 +284,103 @@ impl TorrentEngine {
             session.resume();
         }
         self.start_torrent(info_hash, rt);
+    }
+
+    pub fn set_sequential(&self, info_hash: &InfoHash, enabled: bool) {
+        if let Some(session) = self.sessions.get(info_hash) {
+            session.set_sequential(enabled);
+        }
+    }
+
+    /// Pause the torrent and remove it from the queue so it won't auto-start.
+    pub fn queue_pause_torrent(&self, info_hash: &InfoHash) {
+        if let Some(session) = self.sessions.get(info_hash) {
+            session.set_queue_paused(true);
+            session.pause();
+            session.stats.lock().state = TorrentState::Queued;
+        }
+    }
+
+    /// Enforce `max_active_downloads`: keep the most-progressed torrents
+    /// downloading, pause the rest as `Queued`, and auto-resume/start queued
+    /// torrents when a slot frees (e.g. another torrent completes).
+    pub fn enforce_queue(&self, rt: &tokio::runtime::Runtime) {
+        self.enforce_queue_with_handle(rt.handle());
+    }
+
+    fn enforce_queue_with_handle(&self, handle: &tokio::runtime::Handle) {
+        let max_dl = self.config_read().max_active_downloads;
+        if max_dl == 0 {
+            // 0 = unlimited: lift any queue-imposed pauses.
+            for entry in self.sessions.iter() {
+                let s = entry.value();
+                if s.is_queue_paused() {
+                    s.resume();
+                    if !s.is_started() {
+                        self.spawn_start(entry.key(), handle);
+                    }
+                }
+            }
+            return;
+        }
+
+        struct Candidate {
+            hash: InfoHash,
+            session: Arc<TorrentSession>,
+            progress: f32,
+        }
+
+        let mut candidates: Vec<Candidate> = Vec::new();
+        let mut completed_but_queued: Vec<InfoHash> = Vec::new();
+
+        for entry in self.sessions.iter() {
+            let s = entry.value();
+            let complete = s.piece_manager.read().is_complete();
+            if s.is_queue_paused() && complete {
+                completed_but_queued.push(*entry.key());
+            }
+            // Completed torrents seed regardless; user-paused torrents are
+            // never counted against download slots nor auto-resumed.
+            let user_paused = s.paused.load(Ordering::Relaxed) && !s.is_queue_paused();
+            if complete || user_paused {
+                continue;
+            }
+            candidates.push(Candidate {
+                hash: *entry.key(),
+                session: s.clone(),
+                progress: s.piece_manager.read().progress(),
+            });
+        }
+
+        // Keep the almost-done torrents downloading; queue the rest.
+        candidates.sort_by(|a, b| {
+            b.progress
+                .partial_cmp(&a.progress)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
+
+        let mut active = 0usize;
+        for cand in candidates {
+            if active < max_dl {
+                active += 1;
+                if !cand.session.is_started() {
+                    cand.session.resume();
+                    self.spawn_start(&cand.hash, handle);
+                } else if cand.session.is_queue_paused() {
+                    cand.session.resume();
+                }
+            } else if !cand.session.is_queue_paused() {
+                cand.session.set_queue_paused(true);
+                cand.session.pause();
+                cand.session.stats.lock().state = TorrentState::Queued;
+            }
+        }
+
+        for hash in completed_but_queued {
+            if let Some(s) = self.sessions.get(&hash) {
+                s.resume();
+            }
+        }
     }
 
     pub fn remove_torrent(&self, info_hash: &InfoHash, delete_files: bool) {
@@ -328,6 +457,7 @@ impl TorrentEngine {
             session.dl_limiter.set_rate(new_config.max_download_rate);
             session.ul_limiter.set_rate(new_config.max_upload_rate);
         }
+        self.enforce_queue_with_handle(&self.rt);
     }
 
     pub fn recheck_torrent(&self, info_hash: &InfoHash, rt: &tokio::runtime::Runtime) {

@@ -4,6 +4,19 @@ use std::sync::OnceLock;
 
 pub static ANDROID_DATA_DIR: OnceLock<PathBuf> = OnceLock::new();
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum EncryptionMode {
+    #[default]
+    Prefer,
+    Require,
+    Disable,
+}
+
+fn default_max_active() -> usize {
+    5
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Config {
     pub download_dir: PathBuf,
@@ -30,6 +43,17 @@ pub struct Config {
     pub minimize_to_tray: bool,
     #[serde(default)]
     pub sequential_download: bool,
+    /// How many torrents may download at once (0 = unlimited).
+    #[serde(default = "default_max_active")]
+    pub max_active_downloads: usize,
+    /// Global cap on actively-seeding torrents (reserved for the queue;
+    /// uploads within a torrent are still governed by `upload_slots`).
+    #[serde(default = "default_max_active")]
+    pub max_active_uploads: usize,
+    /// Preferred peer encryption. Stored for forward-compat until MSE/PE
+    /// (BEP-10 obfuscation) is implemented.
+    #[serde(default)]
+    pub encryption_mode: EncryptionMode,
 }
 
 impl Default for Config {
@@ -62,6 +86,9 @@ impl Default for Config {
             pipeline_depth: 32,
             minimize_to_tray: false,
             sequential_download: false,
+            max_active_downloads: 5,
+            max_active_uploads: 5,
+            encryption_mode: EncryptionMode::Prefer,
         }
     }
 }

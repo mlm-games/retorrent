@@ -20,7 +20,7 @@ use repose_ui::scroll::{ScrollArea, remember_scroll_state};
 use repose_ui::*;
 
 use crate::PendingTorrent;
-use crate::config::Config;
+use crate::config::{Config, EncryptionMode};
 use crate::engine::TorrentEngine;
 use crate::metainfo::{FileInfo, MetaInfo};
 use crate::network::TorrentStats;
@@ -64,6 +64,7 @@ struct TorrentRow {
     trackers: Vec<String>,
     file_priorities: Vec<FilePriority>,
     display_progress: f32,
+    sequential: bool,
 }
 
 fn matches_filter(t: &TorrentRow, filter: FilterState) -> bool {
@@ -76,7 +77,12 @@ fn matches_filter(t: &TorrentRow, filter: FilterState) -> bool {
             )
         }
         FilterState::Seeding => t.stats.state == TorrentState::Seeding,
-        FilterState::Paused => t.stats.state == TorrentState::Paused,
+        FilterState::Paused => {
+            matches!(
+                t.stats.state,
+                TorrentState::Paused | TorrentState::Queued
+            )
+        }
         FilterState::Complete => {
             matches!(
                 t.stats.state,
@@ -288,6 +294,7 @@ pub fn app(
                     trackers,
                     file_priorities: priorities,
                     display_progress,
+                    sequential: session.sequential_enabled(),
                 });
             }
         }
@@ -418,6 +425,7 @@ pub fn app(
             search_query.clone(),
             selected_torrent,
             engine.clone(),
+            rt.clone(),
         ),
     ));
 
@@ -476,6 +484,7 @@ fn main_shell_view(
     search_query: Rc<Signal<String>>,
     selected_torrent: Option<TorrentRow>,
     engine: Arc<TorrentEngine>,
+    rt: Arc<tokio::runtime::Runtime>,
 ) -> View {
     let th = theme();
 
@@ -501,7 +510,7 @@ fn main_shell_view(
             .background(th.surface_container)
             .border(1.0, th.outline_variant, 18.0)
             .clip_rounded(18.0))
-        .child(details_panel_view_v2(selected_torrent, active_tab, engine)),
+        .child(details_panel_view_v2(selected_torrent, active_tab, engine, rt)),
     ))
 }
 
@@ -1124,10 +1133,19 @@ fn metric_text(value: String) -> View {
     Text(value).size(10.5).color(theme().on_surface_variant)
 }
 
+fn mode_label(mode: EncryptionMode) -> &'static str {
+    match mode {
+        EncryptionMode::Prefer => "Prefer",
+        EncryptionMode::Require => "Require",
+        EncryptionMode::Disable => "Disable",
+    }
+}
+
 fn details_panel_view_v2(
     torrent: Option<TorrentRow>,
     active_tab: Rc<Signal<Tab>>,
     engine: Arc<TorrentEngine>,
+    rt: Arc<tokio::runtime::Runtime>,
 ) -> View {
     let th = theme();
 
@@ -1156,7 +1174,7 @@ fn details_panel_view_v2(
         details_header(&torrent),
         details_tabs(active_tab.clone()),
         match active {
-            Tab::General => general_tab_view_v2(&torrent),
+            Tab::General => general_tab_view_v2(&torrent, engine, rt),
             Tab::Files => files_tab_view(&torrent, torrent.info_hash, engine),
             Tab::Peers => peers_tab_view(&torrent),
             Tab::Trackers => trackers_tab_view(&torrent),
@@ -1255,8 +1273,13 @@ fn details_tabs(active_tab: Rc<Signal<Tab>>) -> View {
     TabRow(active_idx, tabs, TabRowConfig::default())
 }
 
-fn general_tab_view_v2(torrent: &TorrentRow) -> View {
+fn general_tab_view_v2(
+    torrent: &TorrentRow,
+    engine: Arc<TorrentEngine>,
+    rt: Arc<tokio::runtime::Runtime>,
+) -> View {
     let th = theme();
+    let hash = torrent.info_hash;
 
     ScrollArea(
         Modifier::new().fill_max_size(),
@@ -1311,6 +1334,55 @@ fn general_tab_view_v2(torrent: &TorrentRow) -> View {
                     theme::accent(),
                 ),
             )),
+            Box(Modifier::new().height(12.0)),
+            Box(Modifier::new()
+                .fill_max_width()
+                .background(th.surface_container_high)
+                .border(1.0, th.outline_variant, 16.0)
+                .clip_rounded(16.0)
+                .padding(16.0))
+            .child(
+                Column(Modifier::new().fill_max_width()).child((
+                    Text("Actions").size(15.0).color(th.on_surface),
+                    Box(Modifier::new().height(10.0)),
+                    Row(Modifier::new()
+                        .fill_max_width()
+                        .align_items(AlignItems::CENTER))
+                    .child((
+                        FilledTonalButton(
+                            Modifier::new().height(36.0),
+                            {
+                                let engine = engine.clone();
+                                let rt = rt.clone();
+                                move || {
+                                    engine.recheck_torrent(&hash, &rt);
+                                }
+                            },
+                            ButtonConfig::default(),
+                            || {
+                                Row(Modifier::new().align_items(AlignItems::CENTER)).child((
+                                    icon(Symbols::REFRESH, 16.0, th.on_surface),
+                                    Box(Modifier::new().width(6.0)),
+                                    Text("Force Recheck").size(12.0),
+                                ))
+                            },
+                        ),
+                        Spacer(),
+                        Text("Sequential download")
+                            .size(12.0)
+                            .color(th.on_surface_variant),
+                        Box(Modifier::new().width(6.0)),
+                        Switch(
+                            torrent.sequential,
+                            {
+                                let engine = engine.clone();
+                                move |v| engine.set_sequential(&hash, v)
+                            },
+                            SwitchConfig::default(),
+                        ),
+                    )),
+                )),
+            ),
             Box(Modifier::new().height(18.0)),
             info_section(
                 "Torrent",
@@ -1627,6 +1699,7 @@ fn magnet_dialog_view(
                                 match engine.add_torrent_from_magnet(&uri, None) {
                                     Ok(hash) => {
                                         engine.start_torrent(&hash, &rt);
+                                        engine.enforce_queue(&rt);
                                         tracing::info!("Added magnet: {}", hash);
                                     }
                                     Err(e) => show_snackbar(
@@ -1881,6 +1954,10 @@ fn settings_dialog_view(
         remember_with_key(state.key("si_unchoke"), || signal(String::new()));
     let seed_ratio_input: Rc<Signal<String>> =
         remember_with_key(state.key("si_sr"), || signal(String::new()));
+    let max_active_input: Rc<Signal<String>> =
+        remember_with_key(state.key("si_mad"), || signal(String::new()));
+    let max_active_ul_input: Rc<Signal<String>> =
+        remember_with_key(state.key("si_mau"), || signal(String::new()));
 
     let vis = state.is_visible();
     if vis && !last_visible.get() {
@@ -1897,6 +1974,8 @@ fn settings_dialog_view(
         choke_input.set(engine_cfg.choke_interval.to_string());
         unchoke_input.set(engine_cfg.optimistic_unchoke_interval.to_string());
         seed_ratio_input.set(engine_cfg.seed_ratio_limit.to_string());
+        max_active_input.set(engine_cfg.max_active_downloads.to_string());
+        max_active_ul_input.set(engine_cfg.max_active_uploads.to_string());
         last_visible.set(true);
     } else if !vis {
         last_visible.set(false);
@@ -1975,6 +2054,42 @@ fn settings_dialog_view(
                             c.set(nc);
                         })
                     }));
+                    views.push(Box(Modifier::new().height(th.spacing.sm)));
+                    views.push(
+                        Row(Modifier::new()
+                            .fill_max_width()
+                            .align_items(AlignItems::CENTER))
+                        .child((
+                            Text("Encryption")
+                                .size(12.0)
+                                .color(th.on_surface_variant)
+                                .modifier(Modifier::new().width(150.0)),
+                            FlowRow(
+                                Modifier::new().flex_grow(1.0),
+                            )
+                            .child(
+                                [EncryptionMode::Prefer, EncryptionMode::Require, EncryptionMode::Disable]
+                                    .into_iter()
+                                    .map(|mode| {
+                                        let selected = cfg.encryption_mode == mode;
+                                        let c = config.clone();
+                                        material3::FilterChip(
+                                            selected,
+                                            move || {
+                                                let mut nc = c.get();
+                                                nc.encryption_mode = mode;
+                                                c.set(nc);
+                                            },
+                                            Text(mode_label(mode)).size(11.0),
+                                            None,
+                                            None,
+                                            ChipConfig::default(),
+                                        )
+                                    })
+                                    .collect::<Vec<_>>(),
+                            ),
+                        )),
+                    );
 
                     // Bandwidth
                     views.push(Box(Modifier::new().height(th.spacing.md)));
@@ -2077,6 +2192,23 @@ fn settings_dialog_view(
                         })
                     }));
 
+                    // Queue
+                    views.push(Box(Modifier::new().height(th.spacing.md)));
+                    views.push(Text("Queue").size(16.0).color(th.on_surface));
+                    views.push(Box(Modifier::new().height(th.spacing.sm)));
+                    views.push(field_row("Max Active Downloads:", &max_active_input));
+                    views.push(Box(Modifier::new().height(th.spacing.sm)));
+                    views.push(field_row("Max Active Uploads:", &max_active_ul_input));
+                    views.push(Box(Modifier::new().height(th.spacing.sm)));
+                    views.push(switch_row("Sequential Download", cfg.sequential_download, {
+                        let c = config.clone();
+                        Rc::new(move |v| {
+                            let mut nc = c.get();
+                            nc.sequential_download = v;
+                            c.set(nc);
+                        })
+                    }));
+
                     // Seeding
                     views.push(Box(Modifier::new().height(th.spacing.md)));
                     views.push(Text("Seeding").size(16.0).color(th.on_surface));
@@ -2125,6 +2257,8 @@ fn settings_dialog_view(
                         let choke = choke_input.clone();
                         let unchoke = unchoke_input.clone();
                         let sr = seed_ratio_input.clone();
+                        let mad = max_active_input.clone();
+                        let mau = max_active_ul_input.clone();
                         move || {
                             let engine_cfg = e.config_read().clone();
                             c.set(engine_cfg.clone());
@@ -2139,6 +2273,8 @@ fn settings_dialog_view(
                             choke.set(engine_cfg.choke_interval.to_string());
                             unchoke.set(engine_cfg.optimistic_unchoke_interval.to_string());
                             sr.set(engine_cfg.seed_ratio_limit.to_string());
+                            mad.set(engine_cfg.max_active_downloads.to_string());
+                            mau.set(engine_cfg.max_active_uploads.to_string());
                             s.dismiss();
                         }
                     },
@@ -2163,6 +2299,8 @@ fn settings_dialog_view(
                         let choke = choke_input.clone();
                         let unchoke = unchoke_input.clone();
                         let sr = seed_ratio_input.clone();
+                        let mad = max_active_input.clone();
+                        let mau = max_active_ul_input.clone();
                         move || {
                             let mut cfg = c.get();
                             if let Ok(v) = lp.get().parse::<u16>() {
@@ -2197,6 +2335,12 @@ fn settings_dialog_view(
                             }
                             if let Ok(v) = sr.get().parse::<f64>() {
                                 cfg.seed_ratio_limit = v;
+                            }
+                            if let Ok(v) = mad.get().parse::<usize>() {
+                                cfg.max_active_downloads = v;
+                            }
+                            if let Ok(v) = mau.get().parse::<usize>() {
+                                cfg.max_active_uploads = v;
                             }
                             let _ = cfg.save();
                             e.apply_config(&cfg);
@@ -2358,6 +2502,7 @@ fn add_torrent_dialog_view(
                         match engine.add_torrent_from_bytes(data, dir, Some(&priorities)) {
                             Ok(info_hash) => {
                                 engine.start_torrent(&info_hash, &rt);
+                                engine.enforce_queue(&rt);
                                 tracing::info!("Added torrent: {}", info_hash);
                             }
                             Err(e) => {

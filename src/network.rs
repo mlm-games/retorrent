@@ -76,6 +76,12 @@ pub struct TorrentSession {
     /// Channel the piece-verify task uses to announce completed piece indices.
     piece_done_tx: mpsc::UnboundedSender<u32>,
     piece_done_rx: parking_lot::Mutex<Option<mpsc::UnboundedReceiver<u32>>>,
+    /// Set when the engine's global queue paused this session to honor
+    /// `max_active_downloads`. Distinguishes queue pauses from user pauses so
+    /// the queue can auto-resume torrents when a slot frees.
+    pub queue_paused: Arc<AtomicBool>,
+    /// Per-torrent sequential-download override; `None` = follow global config.
+    pub sequential_override: Arc<parking_lot::Mutex<Option<bool>>>,
 }
 
 impl TorrentSession {
@@ -164,6 +170,8 @@ impl TorrentSession {
             peer_event_tx: parking_lot::Mutex::new(None),
             piece_done_tx,
             piece_done_rx: parking_lot::Mutex::new(Some(piece_done_rx)),
+            queue_paused: Arc::new(AtomicBool::new(false)),
+            sequential_override: Arc::new(parking_lot::Mutex::new(None)),
         }))
     }
 
@@ -216,7 +224,8 @@ impl TorrentSession {
             added_time: chrono::Utc::now().timestamp(),
             completed_time: *self.completed_time.lock(),
             torrent_bytes: self.torrent_bytes.lock().clone(),
-            prev_state: if self.paused.load(Ordering::Relaxed)
+            prev_state: if (self.paused.load(Ordering::Relaxed)
+                && !self.queue_paused.load(Ordering::Relaxed))
                 || !self.started.load(Ordering::Relaxed)
             {
                 PrevState::Paused
@@ -672,7 +681,10 @@ impl TorrentSession {
                 if current_piece.is_none() {
                     let in_endgame = self.config.read().endgame_mode
                         && self.piece_manager.read().is_in_endgame();
-                    let sequential = self.config.read().sequential_download;
+                    let sequential = self
+                        .sequential_override
+                        .lock()
+                        .unwrap_or(self.config.read().sequential_download);
                     let candidates = if in_endgame {
                         self.piece_manager.read().get_endgame_pieces()
                     } else {
@@ -1375,7 +1387,11 @@ impl TorrentSession {
             };
 
             let state = if self.paused.load(Ordering::Relaxed) {
-                TorrentState::Paused
+                if self.queue_paused.load(Ordering::Relaxed) {
+                    TorrentState::Queued
+                } else {
+                    TorrentState::Paused
+                }
             } else if self.meta.read().num_pieces() == 0 {
                 TorrentState::FetchingMetadata
             } else if self.piece_manager.read().is_complete()
@@ -1423,12 +1439,36 @@ impl TorrentSession {
 
     pub fn resume(&self) {
         self.paused.store(false, Ordering::Relaxed);
+        self.queue_paused.store(false, Ordering::Relaxed);
         let complete = self.piece_manager.read().is_complete();
         self.stats.lock().state = if complete {
             TorrentState::Seeding
         } else {
             TorrentState::Downloading
         };
+    }
+
+    pub fn is_started(&self) -> bool {
+        self.started.load(Ordering::Relaxed)
+    }
+
+    pub fn is_queue_paused(&self) -> bool {
+        self.queue_paused.load(Ordering::Relaxed)
+    }
+
+    pub fn set_queue_paused(&self, v: bool) {
+        self.queue_paused.store(v, Ordering::Relaxed);
+    }
+
+    /// Per-torrent sequential override; `None` means "follow global config".
+    pub fn set_sequential(&self, enabled: bool) {
+        *self.sequential_override.lock() = Some(enabled);
+    }
+
+    pub fn sequential_enabled(&self) -> bool {
+        self.sequential_override
+            .lock()
+            .unwrap_or(self.config.read().sequential_download)
     }
 
     pub fn stop(&self) {

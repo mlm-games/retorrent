@@ -26,6 +26,7 @@ repose_material::material_symbols! {
     FILTER_LIST: '\u{e152}',
     MEMORY: '\u{e322}',
     ROUTER: '\u{e328}',
+    REFRESH: '\u{e5d5}',
 }
 
 pub fn icon(symbol: Symbol, size: f32, color: Color) -> View {
