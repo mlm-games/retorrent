@@ -16,12 +16,10 @@ use std::net::{SocketAddr, SocketAddrV4};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::time::{Duration, Instant};
-use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::{Semaphore, mpsc};
 
-enum PeerEvent {
+pub(crate) enum PeerEvent {
     AddPeers(Vec<SocketAddrV4>),
-    IncomingConnection(TcpStream, SocketAddrV4),
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -64,12 +62,20 @@ pub struct TorrentSession {
     completed_time: Mutex<Option<i64>>,
     pub dl_limiter: Arc<RateLimiter>,
     pub ul_limiter: Arc<RateLimiter>,
-    config: Arc<Config>,
+    config: Arc<RwLock<Config>>,
     pub torrent_bytes: Arc<Mutex<Option<Vec<u8>>>>,
     pub peer_choke_stats: Arc<Mutex<HashMap<SocketAddrV4, PeerStats>>>,
     dht: parking_lot::Mutex<Option<Arc<DhtNode>>>,
     /// State for in-progress ut_metadata exchange (magnet links).
     pub metadata_state: Arc<Mutex<Option<super::peer::MetadataState>>>,
+    /// Per-peer channels used to push `Have` broadcasts to running peer loops.
+    peer_msg_txs: Arc<Mutex<HashMap<SocketAddrV4, mpsc::UnboundedSender<u32>>>>,
+    /// Session-side sender for the peer event pipeline (PEX drain, tracker/DHT
+    /// peers). Set when `start()` runs; `None` before that.
+    peer_event_tx: parking_lot::Mutex<Option<mpsc::Sender<PeerEvent>>>,
+    /// Channel the piece-verify task uses to announce completed piece indices.
+    piece_done_tx: mpsc::UnboundedSender<u32>,
+    piece_done_rx: parking_lot::Mutex<Option<mpsc::UnboundedReceiver<u32>>>,
 }
 
 impl TorrentSession {
@@ -128,6 +134,8 @@ impl TorrentSession {
 
         let info_hash = meta.read().info_hash;
 
+        let (piece_done_tx, piece_done_rx) = mpsc::unbounded_channel::<u32>();
+
         Ok(Arc::new(Self {
             info_hash,
             peer_id,
@@ -147,11 +155,15 @@ impl TorrentSession {
             completed_time: Mutex::new(None),
             dl_limiter: Arc::new(RateLimiter::new(config.max_download_rate)),
             ul_limiter: Arc::new(RateLimiter::new(config.max_upload_rate)),
-            config,
+            config: Arc::new(RwLock::new((*config).clone())),
             torrent_bytes: Arc::new(Mutex::new(None)),
             peer_choke_stats: Arc::new(Mutex::new(HashMap::new())),
             dht: parking_lot::Mutex::new(None),
             metadata_state: Arc::new(Mutex::new(None)),
+            peer_msg_txs: Arc::new(Mutex::new(HashMap::new())),
+            peer_event_tx: parking_lot::Mutex::new(None),
+            piece_done_tx,
+            piece_done_rx: parking_lot::Mutex::new(Some(piece_done_rx)),
         }))
     }
 
@@ -228,6 +240,10 @@ impl TorrentSession {
         self.file_priorities.lock().clone()
     }
 
+    pub(crate) fn set_config(&self, config: Arc<Config>) {
+        *self.config.write() = (*config).clone();
+    }
+
     pub async fn start(self: Arc<Self>, max_peers: usize, dht: Option<Arc<DhtNode>>) {
         if self.started.swap(true, Ordering::Relaxed) {
             tracing::warn!("start() called twice for {}", self.info_hash);
@@ -238,6 +254,9 @@ impl TorrentSession {
         *self.dht.lock() = dht.clone();
 
         let (peer_tx, mut peer_rx) = mpsc::channel::<PeerEvent>(100);
+        *self.peer_event_tx.lock() = Some(peer_tx.clone());
+
+        let is_private = self.meta.read().is_private;
 
         let tracker_session = self.clone();
         let peer_tx2 = peer_tx.clone();
@@ -245,25 +264,20 @@ impl TorrentSession {
             tracker_session.tracker_loop(peer_tx2).await;
         });
 
+        // Private torrents (BEP-27) must not use the DHT.
         if let Some(ref dht_node) = dht {
-            let dht_session = self.clone();
-            let dht_peer_tx = peer_tx.clone();
-            let dht = dht_node.clone();
-            let info_hash = self.info_hash;
-            let port = self.config.listen_port;
-            tokio::spawn(async move {
-                dht_session
-                    .dht_loop(dht, info_hash, port, dht_peer_tx)
-                    .await;
-            });
-        }
-
-        if self.config.accept_incoming {
-            let listener_session = self.clone();
-            let listener_tx = peer_tx.clone();
-            tokio::spawn(async move {
-                listener_session.incoming_listener(listener_tx).await;
-            });
+            if !is_private {
+                let dht_session = self.clone();
+                let dht_peer_tx = peer_tx.clone();
+                let dht = dht_node.clone();
+                let info_hash = self.info_hash;
+                let port = self.config.read().listen_port;
+                tokio::spawn(async move {
+                    dht_session
+                        .dht_loop(dht, info_hash, port, dht_peer_tx)
+                        .await;
+                });
+            }
         }
 
         let semaphore = Arc::new(Semaphore::new(max_peers));
@@ -274,80 +288,56 @@ impl TorrentSession {
                 if peer_session.seed_ratio_reached.load(Ordering::Relaxed) {
                     continue;
                 }
-                let (addr, incoming) = match event {
-                    PeerEvent::AddPeers(peers) => {
-                        for addr in peers {
-                            if peer_session.paused.load(Ordering::Relaxed) {
-                                continue;
-                            }
-                            let session = peer_session.clone();
-                            let sem = semaphore.clone();
-                            let evt_tx = session_tx.clone();
-                            tokio::spawn(async move {
-                                let _permit = match sem.acquire().await {
-                                    Ok(p) => p,
-                                    Err(_) => return,
-                                };
-                                struct ActiveGuard<'a> {
-                                    counter: &'a AtomicU64,
-                                }
-                                impl Drop for ActiveGuard<'_> {
-                                    fn drop(&mut self) {
-                                        self.counter.fetch_sub(1, Ordering::Relaxed);
-                                    }
-                                }
-                                session.active_peers.fetch_add(1, Ordering::Relaxed);
-                                let _guard = ActiveGuard {
-                                    counter: &session.active_peers,
-                                };
-
-                                if let Err(e) = session.handle_peer(addr, None, evt_tx).await {
-                                    tracing::debug!("Peer {} error: {}", addr, e);
-                                }
-                            });
-                        }
+                let PeerEvent::AddPeers(peers) = event;
+                for addr in peers {
+                    if peer_session.paused.load(Ordering::Relaxed) {
                         continue;
                     }
-                    PeerEvent::IncomingConnection(stream, addr) => (addr, Some(stream)),
-                };
-
-                if peer_session.paused.load(Ordering::Relaxed) {
-                    continue;
-                }
-                let session = peer_session.clone();
-                let sem = semaphore.clone();
-                let evt_tx = session_tx.clone();
-                tokio::spawn(async move {
-                    let _permit = match sem.acquire().await {
-                        Ok(p) => p,
-                        Err(_) => return,
-                    };
-                    struct ActiveGuard<'a> {
-                        counter: &'a AtomicU64,
-                    }
-                    impl Drop for ActiveGuard<'_> {
-                        fn drop(&mut self) {
-                            self.counter.fetch_sub(1, Ordering::Relaxed);
+                    let session = peer_session.clone();
+                    let sem = semaphore.clone();
+                    let evt_tx = session_tx.clone();
+                    tokio::spawn(async move {
+                        let _permit = match sem.acquire().await {
+                            Ok(p) => p,
+                            Err(_) => return,
+                        };
+                        struct ActiveGuard<'a> {
+                            counter: &'a AtomicU64,
                         }
-                    }
-                    session.active_peers.fetch_add(1, Ordering::Relaxed);
-                    let _guard = ActiveGuard {
-                        counter: &session.active_peers,
-                    };
+                        impl Drop for ActiveGuard<'_> {
+                            fn drop(&mut self) {
+                                self.counter.fetch_sub(1, Ordering::Relaxed);
+                            }
+                        }
+                        session.active_peers.fetch_add(1, Ordering::Relaxed);
+                        let _guard = ActiveGuard {
+                            counter: &session.active_peers,
+                        };
 
-                    if let Err(e) = session.handle_peer(addr, incoming, evt_tx).await {
-                        tracing::debug!("Peer {} error: {}", addr, e);
-                    }
-                });
+                        if let Err(e) = session.handle_peer(addr, None, evt_tx).await {
+                            tracing::debug!("Peer {} error: {}", addr, e);
+                        }
+                    });
+                }
             }
         });
+
+        // Broadcast `Have` to all connected peers when a piece verifies.
+        if let Some(mut piece_done_rx) = self.piece_done_rx.lock().take() {
+            let have_session = self.clone();
+            tokio::spawn(async move {
+                while let Some(idx) = piece_done_rx.recv().await {
+                    have_session.broadcast_have(idx).await;
+                }
+            });
+        }
 
         let stats_session = self.clone();
         tokio::spawn(async move {
             stats_session.stats_loop().await;
         });
 
-        if self.config.webseed_enabled
+        if self.config.read().webseed_enabled
             && !self.meta.read().url_list.is_empty()
             && !self.meta.read().is_private
         {
@@ -358,6 +348,7 @@ impl TorrentSession {
                 stats: self.stats.clone(),
                 total_downloaded: self.total_downloaded.clone(),
                 cancel: self.cancel_token.lock().clone(),
+                paused: self.paused.clone(),
             };
             tokio::spawn(async move {
                 webseed_source.run().await;
@@ -380,10 +371,23 @@ impl TorrentSession {
         let mut peers = dht.get_peers(info_hash, Some(port));
         let token = self.cancel_token.lock().clone();
         loop {
+            if token.is_cancelled() {
+                break;
+            }
+            // Private torrents (BEP-27) must never use the DHT. This also
+            // covers magnets that finalize as private.
+            if self.meta.read().is_private {
+                break;
+            }
+            if self.paused.load(Ordering::Relaxed) {
+                tokio::select! {
+                    _ = tokio::time::sleep(Duration::from_secs(2)) => continue,
+                    _ = token.cancelled() => break,
+                }
+            }
             tokio::select! {
                 Some(peer) = peers.next() => {
                     if let SocketAddr::V4(v4) = peer {
-                        if token.is_cancelled() { break; }
                         let _ = peer_tx.send(PeerEvent::AddPeers(vec![v4])).await;
                     }
                 }
@@ -392,129 +396,137 @@ impl TorrentSession {
         }
     }
 
-    async fn incoming_listener(&self, peer_tx: mpsc::Sender<PeerEvent>) {
-        let bind_addr = format!("0.0.0.0:{}", self.config.listen_port);
-        let listener = match TcpListener::bind(&bind_addr).await {
-            Ok(l) => l,
-            Err(e) => {
-                tracing::warn!("Failed to bind listener on {}: {}", bind_addr, e);
-                return;
-            }
+    /// Incoming connection from the engine-wide shared listener. The
+    /// handshake has already been exchanged (`PeerConnection::accept_any`);
+    /// this only routes the established connection into the peer pipeline.
+    pub(crate) async fn handle_incoming(self: Arc<Self>, conn: PeerConnection) {
+        let addr = conn.addr;
+        let Some(tx) = self.peer_event_tx.lock().clone() else {
+            tracing::debug!(
+                "Dropping incoming peer {}: session {} not started",
+                addr,
+                self.info_hash
+            );
+            return;
         };
-        tracing::info!("Listening for incoming peers on {}", bind_addr);
-
-        let token = self.cancel_token.lock().clone();
-        loop {
-            if token.is_cancelled() {
-                break;
-            }
-            tokio::select! {
-                result = listener.accept() => {
-                    match result {
-                        Ok((stream, remote)) => {
-                            if let Ok(v4) = Self::to_v4(remote) {
-                                tracing::debug!("Incoming connection from {}", v4);
-                                let _ = peer_tx.send(PeerEvent::IncomingConnection(stream, v4)).await;
-                            }
-                        }
-                        Err(e) => {
-                            tracing::debug!("Accept error: {}", e);
-                        }
-                    }
-                }
-                _ = token.cancelled() => break,
-            }
+        if self.paused.load(Ordering::Relaxed) || self.seed_ratio_reached.load(Ordering::Relaxed) {
+            return;
         }
-    }
-
-    fn to_v4(addr: std::net::SocketAddr) -> std::result::Result<SocketAddrV4, ()> {
-        match addr {
-            std::net::SocketAddr::V4(v4) => Ok(v4),
-            _ => Err(()),
+        self.active_peers.fetch_add(1, Ordering::Relaxed);
+        let result = self.handle_peer(addr, Some(conn), tx).await;
+        self.active_peers.fetch_sub(1, Ordering::Relaxed);
+        if let Err(e) = result {
+            tracing::debug!("Incoming peer {} error: {}", addr, e);
         }
     }
 
     async fn tracker_loop(&self, peer_tx: mpsc::Sender<PeerEvent>) {
         let client = TrackerClient::new();
-        let mut interval = 30u64;
-        let mut first_announce = true;
 
-        let mut trackers: Vec<String> = Vec::new();
-        if let Some(ref announce) = self.meta.read().announce {
-            trackers.push(announce.clone());
-        }
-        for tier in &self.meta.read().announce_list {
-            for url in tier {
-                if !trackers.contains(url) {
-                    trackers.push(url.clone());
-                }
+        // BEP-12 tracker tiers. If announce-list is present, walk each tier
+        // in order (trying each URL within a tier until one succeeds) before
+        // falling back to the next tier. Otherwise fall back to `announce`.
+        let tiers: Vec<Vec<String>> = {
+            let m = self.meta.read();
+            if !m.announce_list.is_empty() {
+                m.announce_list.clone()
+            } else if let Some(ref a) = m.announce {
+                vec![vec![a.clone()]]
+            } else {
+                Vec::new()
             }
-        }
+        };
 
         let token = self.cancel_token.lock().clone();
+        let mut interval = 30u64;
+        let mut sent_started = false;
+        // Per-tier cursor so a failed tier resumes at the next URL.
+        let mut working: Vec<usize> = vec![0; tiers.len()];
 
         loop {
             if token.is_cancelled() {
                 break;
             }
+            if self.paused.load(Ordering::Relaxed) {
+                tokio::select! {
+                    _ = tokio::time::sleep(Duration::from_secs(2)) => {}
+                    _ = token.cancelled() => break,
+                }
+                continue;
+            }
 
             let total_size = self.meta.read().total_size;
             let progress = self.piece_manager.read().progress();
             let left = (total_size as f64 * (1.0f64 - progress as f64)) as u64;
+            let event = if !sent_started { Some("started") } else { None };
 
-            for tracker_url in &trackers {
-                let event = if first_announce {
-                    first_announce = false;
-                    Some("started")
-                } else {
-                    None
-                };
-                match client
-                    .announce(
-                        tracker_url,
-                        &self.info_hash,
-                        &self.peer_id,
-                        self.config.listen_port,
-                        self.total_uploaded.load(Ordering::Relaxed),
-                        self.total_downloaded.load(Ordering::Relaxed),
-                        left,
-                        event,
-                    )
-                    .await
-                {
-                    Ok(response) => {
-                        interval = response.interval.max(response.min_interval.unwrap_or(0));
-                        {
-                            let mut stats = self.stats.lock();
-                            if let Some(s) = response.seeders {
-                                stats.seeders = s;
+            for (ti, tier) in tiers.iter().enumerate() {
+                if tier.is_empty() {
+                    continue;
+                }
+                let start = working[ti] % tier.len();
+                let mut tier_ok = false;
+                for off in 0..tier.len() {
+                    let idx = (start + off) % tier.len();
+                    let url = &tier[idx];
+                    let port = self.config.read().listen_port;
+                    match client
+                        .announce(
+                            url,
+                            &self.info_hash,
+                            &self.peer_id,
+                            port,
+                            self.total_uploaded.load(Ordering::Relaxed),
+                            self.total_downloaded.load(Ordering::Relaxed),
+                            left,
+                            event,
+                        )
+                        .await
+                    {
+                        Ok(response) => {
+                            sent_started = true;
+                            working[ti] = idx;
+                            interval = response
+                                .interval
+                                .max(response.min_interval.unwrap_or(0))
+                                .max(30);
+                            {
+                                let mut stats = self.stats.lock();
+                                if let Some(s) = response.seeders {
+                                    stats.seeders = s;
+                                }
+                                if let Some(l) = response.leechers {
+                                    stats.leechers = l;
+                                }
                             }
-                            if let Some(l) = response.leechers {
-                                stats.leechers = l;
+                            if !response.peers.is_empty() {
+                                let _ = peer_tx.send(PeerEvent::AddPeers(response.peers)).await;
                             }
+                            tracing::info!("Tracker {} OK, interval={}s", url, interval);
+                            tier_ok = true;
+                            break;
                         }
-                        if !response.peers.is_empty() {
-                            let _ = peer_tx.send(PeerEvent::AddPeers(response.peers)).await;
+                        Err(e) => {
+                            tracing::warn!("Tracker {} error: {}", url, e);
                         }
-                        tracing::info!("Tracker {} OK, interval={}s", tracker_url, interval);
-                        break;
                     }
-                    Err(e) => {
-                        tracing::warn!("Tracker {} error: {}", tracker_url, e);
-                    }
+                }
+                if tier_ok {
+                    break;
                 }
             }
 
             if self.piece_manager.read().is_complete()
                 && !self.completed_sent.swap(true, Ordering::Relaxed)
-                && let Some(tracker_url) = trackers.first()
+                && let Some(url) = tiers.iter().flatten().next()
             {
+                let port = self.config.read().listen_port;
                 let _ = client
                     .announce(
-                        tracker_url,
+                        url,
                         &self.info_hash,
                         &self.peer_id,
-                        self.config.listen_port,
+                        port,
                         self.total_uploaded.load(Ordering::Relaxed),
                         self.total_downloaded.load(Ordering::Relaxed),
                         0,
@@ -529,13 +541,14 @@ impl TorrentSession {
             }
         }
 
-        if let Some(tracker_url) = trackers.first() {
+        if let Some(url) = tiers.iter().flatten().next() {
+            let port = self.config.read().listen_port;
             let _ = client
                 .announce(
-                    tracker_url,
+                    url,
                     &self.info_hash,
                     &self.peer_id,
-                    self.config.listen_port,
+                    port,
                     self.total_uploaded.load(Ordering::Relaxed),
                     self.total_downloaded.load(Ordering::Relaxed),
                     0,
@@ -548,11 +561,13 @@ impl TorrentSession {
     async fn handle_peer(
         &self,
         addr: SocketAddrV4,
-        incoming: Option<TcpStream>,
+        incoming: Option<PeerConnection>,
         peer_event_tx: mpsc::Sender<PeerEvent>,
     ) -> Result<()> {
-        let mut conn = if let Some(stream) = incoming {
-            PeerConnection::accept(stream, addr, &self.info_hash, &self.peer_id).await?
+        // Incoming connections arrive here already handshaken by the
+        // engine-wide shared listener (`PeerConnection::accept_any`).
+        let mut conn = if let Some(conn) = incoming {
+            conn
         } else {
             PeerConnection::connect(addr, &self.info_hash, &self.peer_id).await?
         };
@@ -569,7 +584,7 @@ impl TorrentSession {
         // message. We advertise ut_pex (id=1).
         let meta_size = self.torrent_bytes.lock().as_ref().map(|b| b.len());
         let hs = PeerMessage::build_extended_handshake_payload(
-            self.config.pipeline_depth as u32,
+            self.config.read().pipeline_depth as u32,
             meta_size,
         );
         conn.send_message(&PeerMessage::Extended { id: 0, payload: hs })
@@ -584,6 +599,12 @@ impl TorrentSession {
             },
         );
 
+        // Register a channel so `broadcast_have` can push `Have` messages to
+        // this peer the moment a piece verifies, instead of waiting for a
+        // reconnect/bitfield.
+        let (have_tx, mut have_rx) = mpsc::unbounded_channel::<u32>();
+        self.peer_msg_txs.lock().insert(addr, have_tx);
+
         let is_metadata_mode = self.meta.read().num_pieces() == 0;
         if is_metadata_mode {
             self.metadata_state
@@ -596,7 +617,7 @@ impl TorrentSession {
         let mut current_piece_index: Option<u32> = None;
         let mut pending_requests: u32 = 0;
         let mut blocks_in_piece: u32 = 0;
-        let max_pipeline = self.config.pipeline_depth;
+        let max_pipeline = self.config.read().pipeline_depth;
         let mut issued_by_us: HashSet<u32> = HashSet::new();
 
         let mut keepalive_timer = Instant::now();
@@ -612,10 +633,10 @@ impl TorrentSession {
             }
             if self.meta.read().num_pieces() > 0 && self.piece_manager.read().is_complete() {
                 self.stats.lock().state = TorrentState::Seeding;
-                if self.config.seed_ratio_enabled {
+                if self.config.read().seed_ratio_enabled {
                     let dl = self.total_downloaded.load(Ordering::Relaxed);
                     let ul = self.total_uploaded.load(Ordering::Relaxed);
-                    if dl > 0 && (ul as f64 / dl as f64) >= self.config.seed_ratio_limit {
+                    if dl > 0 && (ul as f64 / dl as f64) >= self.config.read().seed_ratio_limit {
                         tracing::info!("Seed ratio reached, stopping");
                         self.seed_ratio_reached.store(true, Ordering::Relaxed);
                         break;
@@ -649,12 +670,15 @@ impl TorrentSession {
 
             if !conn.peer_choking && pending_requests < max_pipeline {
                 if current_piece.is_none() {
-                    let in_endgame =
-                        self.config.endgame_mode && self.piece_manager.read().is_in_endgame();
+                    let in_endgame = self.config.read().endgame_mode
+                        && self.piece_manager.read().is_in_endgame();
+                    let sequential = self.config.read().sequential_download;
                     let candidates = if in_endgame {
                         self.piece_manager.read().get_endgame_pieces()
                     } else {
-                        self.piece_manager.read().select_piece(&conn.bitfield)
+                        self.piece_manager
+                            .read()
+                            .select_piece(&conn.bitfield, sequential)
                     };
 
                     for piece_idx in candidates.iter().take(10) {
@@ -724,7 +748,8 @@ impl TorrentSession {
                 }
             }
 
-            if self.config.pex_enabled
+            let pex_enabled = self.config.read().pex_enabled && !self.meta.read().is_private;
+            if pex_enabled
                 && last_pex_send.elapsed() > Duration::from_secs(10)
                 && !known_peers.is_empty()
             {
@@ -750,7 +775,7 @@ impl TorrentSession {
             // peers via PEX and never actually connects to any of them —
             // a much bigger hit than it sounds, because qBittorrent uses
             // PEX peers as its primary source after the first handshake.
-            if self.config.pex_enabled
+            if pex_enabled
                 && last_pex_drain.elapsed() > Duration::from_secs(15)
                 && !known_peers.is_empty()
             {
@@ -769,17 +794,29 @@ impl TorrentSession {
                 last_pex_drain = Instant::now();
             }
 
-            let msg = match tokio::time::timeout(Duration::from_secs(10), conn.recv_message()).await
-            {
-                Ok(Ok(msg)) => msg,
-                Ok(Err(e)) => {
-                    tracing::debug!("Peer {} recv error: {}", addr, e);
-                    break;
+            let msg = tokio::select! {
+                r = tokio::time::timeout(Duration::from_secs(10), conn.recv_message()) => {
+                    match r {
+                        Ok(Ok(msg)) => Some(msg),
+                        Ok(Err(e)) => {
+                            tracing::debug!("Peer {} recv error: {}", addr, e);
+                            break;
+                        }
+                        Err(_) => None,
+                    }
                 }
-                Err(_) => {
-                    continue;
+                have = have_rx.recv() => {
+                    match have {
+                        Some(idx) => {
+                            conn.send_message(&PeerMessage::Have(idx)).await?;
+                            None
+                        }
+                        None => break,
+                    }
                 }
             };
+
+            let Some(msg) = msg else { continue };
 
             match msg {
                 PeerMessage::KeepAlive => {}
@@ -1070,8 +1107,11 @@ impl TorrentSession {
                 PeerMessage::Piece { index, begin, data } => {
                     pending_requests = pending_requests.saturating_sub(1);
                     issued_by_us.remove(&begin);
+                    // Per-peer delivery counters feed the choke algorithm and
+                    // must be updated on receipt. Our own `total_downloaded`
+                    // is only incremented after the piece verifies, so bad
+                    // pieces don't inflate download stats.
                     let data_len = data.len() as u64;
-                    self.total_downloaded.fetch_add(data_len, Ordering::Relaxed);
                     self.peer_choke_stats
                         .lock()
                         .get_mut(&conn.addr)
@@ -1092,6 +1132,9 @@ impl TorrentSession {
                                 let storage = self.storage.read().clone();
                                 let pm = self.piece_manager.read().clone();
                                 let idx = index;
+                                let piece_len = piece_data.len() as u64;
+                                let total_downloaded = self.total_downloaded.clone();
+                                let piece_done = self.piece_done_tx.clone();
                                 tracing::info!(
                                     "verifying piece {} ({} bytes)",
                                     idx,
@@ -1109,6 +1152,9 @@ impl TorrentSession {
                                                 return;
                                             }
                                             pm.mark_piece_complete(idx);
+                                            total_downloaded
+                                                .fetch_add(piece_len, Ordering::Relaxed);
+                                            let _ = piece_done.send(idx);
                                             tracing::info!(
                                                 "Piece {} OK ({:.1}%)",
                                                 idx,
@@ -1198,22 +1244,25 @@ impl TorrentSession {
             }
         }
 
-        if let Some(idx) = current_piece_index {
+        if let Some(_idx) = current_piece_index {
             // Release any blocks this conn claimed but never received.
             // The piece's 30s timeout would also free these, but
             // releasing on exit lets another peer claim them
             // immediately instead of waiting up to 30s.
+            // Deliberately NOT calling abort_piece: other peers may be
+            // filling the same piece, and aborting would discard their
+            // collected blocks. The collector stays in_progress and is
+            // picked up again via pick_in_progress_for_peer.
             if let Some(collector) = current_piece.as_ref() {
                 let mut c = collector.lock();
                 for offset in &issued_by_us {
                     c.issued.remove(offset);
                 }
             }
-            self.piece_manager.read().abort_piece(idx);
-            pending_requests = 0;
         }
 
         self.peer_choke_stats.lock().remove(&addr);
+        self.peer_msg_txs.lock().remove(&addr);
 
         Ok(())
     }
@@ -1260,14 +1309,14 @@ impl TorrentSession {
             speeds.sort_by(|a, b| b.1.cmp(&a.1));
 
             let mut to_unchoke: Vec<SocketAddrV4> = Vec::new();
-            let slots = self.config.upload_slots.max(1);
+            let slots = self.config.read().upload_slots.max(1);
 
             for (addr, _) in speeds.iter().take(slots.saturating_sub(1)) {
                 to_unchoke.push(*addr);
             }
 
             if last_opt_unchoke.elapsed()
-                >= Duration::from_secs(self.config.optimistic_unchoke_interval)
+                >= Duration::from_secs(self.config.read().optimistic_unchoke_interval)
             {
                 let candidates: Vec<SocketAddrV4> = interested_set
                     .iter()
@@ -1364,13 +1413,22 @@ impl TorrentSession {
 
     pub fn pause(&self) {
         self.paused.store(true, Ordering::Relaxed);
-        self.cancel_token.lock().cancel();
+        let complete = self.piece_manager.read().is_complete();
+        self.stats.lock().state = if complete {
+            TorrentState::Seeding
+        } else {
+            TorrentState::Paused
+        };
     }
 
     pub fn resume(&self) {
         self.paused.store(false, Ordering::Relaxed);
-        *self.cancel_token.lock() = tokio_util::sync::CancellationToken::new();
-        self.started.store(false, Ordering::Relaxed);
+        let complete = self.piece_manager.read().is_complete();
+        self.stats.lock().state = if complete {
+            TorrentState::Seeding
+        } else {
+            TorrentState::Downloading
+        };
     }
 
     pub fn stop(&self) {
@@ -1379,16 +1437,68 @@ impl TorrentSession {
         let _ = rd.save_to_dir(&Config::resume_dir());
     }
 
+    /// Broadcast a `Have` message to every connected peer.
+    async fn broadcast_have(&self, index: u32) {
+        let txs: Vec<mpsc::UnboundedSender<u32>> =
+            self.peer_msg_txs.lock().values().cloned().collect();
+        for tx in txs {
+            let _ = tx.send(index);
+        }
+    }
+
     pub fn get_stats(&self) -> TorrentStats {
         self.stats.lock().clone()
     }
 
-    /// Wrap a raw info-dict in a minimal torrent file.
-    fn wrap_info_dict(info_dict: &[u8]) -> Vec<u8> {
-        let mut data = b"d4:info".to_vec();
-        data.extend_from_slice(info_dict);
-        data.push(b'e');
-        data
+    fn wrap_info_dict_with_trackers(
+        info_dict: &[u8],
+        announce: Option<&str>,
+        announce_list: &[Vec<String>],
+        url_list: &[String],
+    ) -> Vec<u8> {
+        use crate::bencode::{BencodeParser, BencodeValue};
+        use std::collections::BTreeMap;
+
+        let mut root = BTreeMap::new();
+        match BencodeParser::parse(info_dict) {
+            Ok(info_val) => {
+                root.insert("info".to_string(), info_val);
+            }
+            Err(_) => {
+                // Fallback: splice raw bytes into a minimal root dict.
+                let mut data = b"d4:info".to_vec();
+                data.extend_from_slice(info_dict);
+                data.push(b'e');
+                return data;
+            }
+        }
+        if let Some(a) = announce {
+            root.insert(
+                "announce".to_string(),
+                BencodeValue::ByteString(a.as_bytes().to_vec()),
+            );
+        }
+        if !announce_list.is_empty() {
+            let tiers: Vec<BencodeValue> = announce_list
+                .iter()
+                .map(|tier| {
+                    BencodeValue::List(
+                        tier.iter()
+                            .map(|u| BencodeValue::ByteString(u.as_bytes().to_vec()))
+                            .collect(),
+                    )
+                })
+                .collect();
+            root.insert("announce-list".to_string(), BencodeValue::List(tiers));
+        }
+        if !url_list.is_empty() {
+            let list: Vec<BencodeValue> = url_list
+                .iter()
+                .map(|u| BencodeValue::ByteString(u.as_bytes().to_vec()))
+                .collect();
+            root.insert("url-list".to_string(), BencodeValue::List(list));
+        }
+        BencodeParser::encode(&BencodeValue::Dict(root))
     }
 
     /// Called when all metadata pieces have been received and verified.
@@ -1400,8 +1510,39 @@ impl TorrentSession {
             return Ok(());
         }
 
-        let torrent_bytes = Self::wrap_info_dict(&assembled);
-        let real_meta = MetaInfo::from_bytes(&torrent_bytes)?;
+        // Capture the magnet-supplied trackers / web seeds / display name
+        // before the real info dict replaces them.
+        let (old_announce, old_list, old_name, old_url_list) = {
+            let m = self.meta.read();
+            (
+                m.announce.clone(),
+                m.announce_list.clone(),
+                m.name.clone(),
+                m.url_list.clone(),
+            )
+        };
+
+        let torrent_bytes = Self::wrap_info_dict_with_trackers(
+            &assembled,
+            old_announce.as_deref(),
+            &old_list,
+            &old_url_list,
+        );
+        let mut real_meta = MetaInfo::from_bytes(&torrent_bytes)?;
+
+        // Prefer the magnet display name if the info dict's is generic.
+        if real_meta.name.is_empty() || real_meta.name == "unknown" {
+            real_meta.name = old_name;
+        }
+        if real_meta.announce.is_none() {
+            real_meta.announce = old_announce;
+        }
+        if real_meta.announce_list.is_empty() {
+            real_meta.announce_list = old_list;
+        }
+        if real_meta.url_list.is_empty() {
+            real_meta.url_list = old_url_list;
+        }
 
         // Reset file priorities before creating DiskStorage so it sees
         // the correct priority vector length.
@@ -1421,8 +1562,8 @@ impl TorrentSession {
         let new_storage = Arc::new(DiskStorage::new(
             self.storage.read().base_path().to_path_buf(),
             &real_meta,
-            self.config.prealloc_files,
-            self.config.cache_size_mb,
+            self.config.read().prealloc_files,
+            self.config.read().cache_size_mb,
             self.file_priorities.clone(),
         )?);
 
@@ -1432,7 +1573,62 @@ impl TorrentSession {
         self.set_torrent_bytes(torrent_bytes);
         self.stats.lock().state = TorrentState::Downloading;
 
+        // Persist resume immediately so a restart doesn't re-fetch metadata.
+        let rd = self.snapshot_resume();
+        let _ = rd.save_to_dir(&Config::resume_dir());
+
         tracing::info!("Session updated with metadata for {}", self.info_hash);
         Ok(())
+    }
+
+    pub async fn recheck(self: Arc<Self>) {
+        if self.meta.read().num_pieces() == 0 {
+            return;
+        }
+        self.stats.lock().state = TorrentState::Checking;
+        let pm = self.piece_manager.read().clone();
+        let storage = self.storage.read().clone();
+        let num = pm.num_pieces;
+
+        tokio::task::spawn_blocking(move || {
+            for i in 0..num {
+                let size = pm.piece_size(i);
+                let ok = match storage.read_piece(i, size) {
+                    Ok(data) => {
+                        let mut hasher = sha1::Sha1::new();
+                        sha1::Digest::update(&mut hasher, data.as_ref());
+                        hasher.finalize().as_slice() == pm.hashes[i as usize]
+                    }
+                    Err(_) => false,
+                };
+                if ok {
+                    pm.mark_piece_complete(i);
+                } else {
+                    let mut have = pm.have.lock();
+                    if (i as usize) < have.len() {
+                        have[i as usize] = false;
+                    }
+                    let mut avail = pm.piece_availability.lock();
+                    if (i as usize) < avail.len() {
+                        avail[i as usize] = 0;
+                    }
+                    pm.in_progress.lock().remove(&i);
+                }
+            }
+        })
+        .await
+        .ok();
+
+        let complete = self.piece_manager.read().is_complete();
+        self.stats.lock().state = if complete {
+            TorrentState::Seeding
+        } else if self.paused.load(Ordering::Relaxed) {
+            TorrentState::Paused
+        } else {
+            TorrentState::Downloading
+        };
+        let rd = self.snapshot_resume();
+        let _ = rd.save_to_dir(&Config::resume_dir());
+        tracing::info!("Recheck finished for {}", self.info_hash);
     }
 }

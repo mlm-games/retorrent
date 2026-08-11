@@ -86,7 +86,7 @@ pub struct PeerId(pub [u8; 20]);
 impl PeerId {
     pub fn generate() -> Self {
         let mut id = [0u8; 20];
-        let prefix = b"-RE0100-";
+        let prefix = b"-RE0304-";
         id[..8].copy_from_slice(prefix);
         for byte in &mut id[8..] {
             *byte = rand::random();
@@ -345,11 +345,22 @@ pub struct ResumeData {
 }
 
 impl ResumeData {
+    /// Persist the torrent to `{info_hash}.torrent` and the slim resume
+    /// data to `{info_hash}.resume.json`, so the (potentially multi-MB)
+    /// torrent bytes aren't embedded in every resume write.
     pub fn save_to_dir(&self, dir: &std::path::Path) -> crate::error::Result<()> {
         std::fs::create_dir_all(dir)
             .map_err(|e| crate::error::TorrentError::ResumeData(format!("create dir: {}", e)))?;
+        if let Some(ref bytes) = self.torrent_bytes {
+            let tpath = dir.join(format!("{}.torrent", self.info_hash));
+            std::fs::write(&tpath, bytes).map_err(|e| {
+                crate::error::TorrentError::ResumeData(format!("torrent: {}", e))
+            })?;
+        }
+        let mut slim = self.clone();
+        slim.torrent_bytes = None;
         let path = dir.join(format!("{}.resume.json", self.info_hash));
-        let json = serde_json::to_string_pretty(self)
+        let json = serde_json::to_string_pretty(&slim)
             .map_err(|e| crate::error::TorrentError::ResumeData(format!("serialize: {}", e)))?;
         std::fs::write(&path, json)
             .map_err(|e| crate::error::TorrentError::ResumeData(format!("write: {}", e)))?;
@@ -359,14 +370,21 @@ impl ResumeData {
     pub fn load_from_dir(info_hash_hex: &str, dir: &std::path::Path) -> Option<Self> {
         let path = dir.join(format!("{}.resume.json", info_hash_hex));
         let json = std::fs::read_to_string(&path).ok()?;
-        serde_json::from_str(&json).ok()
+        let mut data: Self = serde_json::from_str(&json).ok()?;
+        if data.torrent_bytes.is_none() {
+            let tpath = dir.join(format!("{}.torrent", info_hash_hex));
+            data.torrent_bytes = std::fs::read(tpath).ok();
+        }
+        Some(data)
     }
 
     pub fn remove_from_dir(info_hash_hex: &str, dir: &std::path::Path) -> crate::error::Result<()> {
-        let path = dir.join(format!("{}.resume.json", info_hash_hex));
-        if path.exists() {
-            std::fs::remove_file(path)
-                .map_err(|e| crate::error::TorrentError::ResumeData(format!("remove: {}", e)))?;
+        for suffix in [".resume.json", ".torrent"] {
+            let path = dir.join(format!("{}{}", info_hash_hex, suffix));
+            if path.exists() {
+                std::fs::remove_file(path)
+                    .map_err(|e| crate::error::TorrentError::ResumeData(format!("remove: {}", e)))?;
+            }
         }
         Ok(())
     }

@@ -240,6 +240,10 @@ impl MetaInfo {
     /// For multi-file torrents, `file_path` already includes the
     /// `info.name` prefix (the way `parse_multi_file` constructs it).
     pub fn webseed_url_for(&self, base: &str, file_path: &str) -> String {
+        Self::webseed_url_for_static(base, file_path)
+    }
+
+    pub fn webseed_url_for_static(base: &str, file_path: &str) -> String {
         let base = if base.ends_with('/') {
             base.to_string()
         } else {

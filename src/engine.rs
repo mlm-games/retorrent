@@ -3,11 +3,14 @@ use crate::dht::DhtNode;
 use crate::error::Result;
 use crate::metainfo::MetaInfo;
 use crate::network::TorrentSession;
+use crate::peer::PeerConnection;
 use crate::types::*;
 use dashmap::DashMap;
 use std::fs::create_dir_all;
+use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::sync::{Arc, RwLock, RwLockReadGuard, RwLockWriteGuard};
+use tokio::net::TcpListener;
 use tokio_util::sync::CancellationToken;
 
 #[derive(Clone)]
@@ -60,6 +63,61 @@ impl TorrentEngine {
             let cancel = engine.cancellation_token.clone();
             let port = engine.config_read().listen_port;
             tokio::spawn(async move { crate::nat::run(port, cancel).await });
+        }
+
+        if engine.config_read().accept_incoming {
+            let port = engine.config_read().listen_port;
+            let cancel = engine.cancellation_token.clone();
+            let sessions = engine.sessions.clone();
+            let peer_id = engine.peer_id;
+            tokio::spawn(async move {
+                let bind = format!("0.0.0.0:{}", port);
+                let listener = match TcpListener::bind(&bind).await {
+                    Ok(l) => l,
+                    Err(e) => {
+                        tracing::warn!("Failed to bind listener on {}: {}", bind, e);
+                        return;
+                    }
+                };
+                tracing::info!("Listening for incoming peers on {}", bind);
+                loop {
+                    tokio::select! {
+                        _ = cancel.cancelled() => break,
+                        acc = listener.accept() => {
+                            match acc {
+                                Ok((stream, addr)) => {
+                                    let SocketAddr::V4(v4) = addr else { continue };
+                                    let sessions = sessions.clone();
+                                    let peer_id = peer_id;
+                                    tokio::spawn(async move {
+                                        match PeerConnection::accept_any(stream, v4, &peer_id).await
+                                        {
+                                            Ok((conn, remote_ih)) => {
+                                                if let Some(session) = sessions.get(&remote_ih) {
+                                                    let session = session.value().clone();
+                                                    session.handle_incoming(conn).await;
+                                                } else {
+                                                    tracing::debug!(
+                                                        "incoming peer {} for unknown torrent {}",
+                                                        v4,
+                                                        remote_ih
+                                                    );
+                                                }
+                                            }
+                                            Err(e) => tracing::debug!(
+                                                "incoming handshake {}: {}",
+                                                v4,
+                                                e
+                                            ),
+                                        }
+                                    });
+                                }
+                                Err(e) => tracing::debug!("accept: {}", e),
+                            }
+                        }
+                    }
+                }
+            });
         }
 
         let to_start = if engine.config_read().auto_resume {
@@ -145,7 +203,7 @@ impl TorrentEngine {
             total_size: 0,
             announce: magnet.trackers.first().cloned(),
             announce_list,
-            url_list: Vec::new(),
+            url_list: magnet.web_seeds.clone(),
             comment: None,
             created_by: None,
             creation_date: None,
@@ -263,10 +321,21 @@ impl TorrentEngine {
 
     pub fn apply_config(&self, new_config: &Config) {
         *self.config_write() = new_config.clone();
+        let new_arc = Arc::new(new_config.clone());
         for entry in self.sessions.iter() {
             let session = entry.value();
+            session.set_config(new_arc.clone());
             session.dl_limiter.set_rate(new_config.max_download_rate);
             session.ul_limiter.set_rate(new_config.max_upload_rate);
+        }
+    }
+
+    pub fn recheck_torrent(&self, info_hash: &InfoHash, rt: &tokio::runtime::Runtime) {
+        if let Some(session) = self.sessions.get(info_hash) {
+            let session = session.value().clone();
+            rt.spawn(async move {
+                session.recheck().await;
+            });
         }
     }
 

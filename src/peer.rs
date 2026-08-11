@@ -113,7 +113,7 @@ impl PeerMessage {
         top.insert("m".to_string(), BencodeValue::Dict(m));
         top.insert(
             "v".to_string(),
-            BencodeValue::ByteString(b"retorrent-0.1.0".to_vec()),
+            BencodeValue::ByteString(b"retorrent-0.3.4".to_vec()),
         );
         top.insert("reqq".to_string(), BencodeValue::Integer(reqq as i64));
         if let Some(size) = metadata_size {
@@ -548,17 +548,48 @@ impl PeerConnection {
         Ok(conn)
     }
 
-    pub async fn accept(
-        stream: TcpStream,
+    pub async fn accept_any(
+        mut stream: TcpStream,
         addr: std::net::SocketAddrV4,
-        info_hash: &InfoHash,
         my_peer_id: &PeerId,
-    ) -> Result<Self> {
+    ) -> Result<(Self, InfoHash)> {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
         let _ = stream.set_nodelay(true);
 
+        let mut hdr = [0u8; 68];
+        stream
+            .read_exact(&mut hdr)
+            .await
+            .map_err(|e| TorrentError::Network(e.to_string()))?;
+
+        if hdr[0] != 19 || &hdr[1..20] != b"BitTorrent protocol" {
+            return Err(TorrentError::Peer("Invalid handshake".to_string()));
+        }
+
+        let mut ih = [0u8; 20];
+        ih.copy_from_slice(&hdr[28..48]);
+        let info_hash = InfoHash(ih);
+
+        let mut peer_id = [0u8; 20];
+        peer_id.copy_from_slice(&hdr[48..68]);
+
+        let mut resp = [0u8; 68];
+        resp[0] = 19;
+        resp[1..20].copy_from_slice(b"BitTorrent protocol");
+        let mut reserved = [0u8; 8];
+        reserved[5] = 0x10 | 0x04; // BEP-10 + BEP-9
+        resp[20..28].copy_from_slice(&reserved);
+        resp[28..48].copy_from_slice(&info_hash.0);
+        resp[48..68].copy_from_slice(&my_peer_id.0);
+        stream
+            .write_all(&resp)
+            .await
+            .map_err(|e| TorrentError::Network(e.to_string()))?;
+
         let mut conn = Self::new_connection(stream, addr);
-        conn.incoming_handshake(info_hash, my_peer_id).await?;
-        Ok(conn)
+        conn.peer_id = Some(PeerId(peer_id));
+        Ok((conn, info_hash))
     }
 
     fn new_connection(stream: TcpStream, addr: std::net::SocketAddrV4) -> Self {
@@ -615,49 +646,6 @@ impl PeerConnection {
         let mut peer_id = [0u8; 20];
         peer_id.copy_from_slice(&resp[48..68]);
         self.peer_id = Some(PeerId(peer_id));
-
-        Ok(())
-    }
-
-    async fn incoming_handshake(
-        &mut self,
-        info_hash: &InfoHash,
-        my_peer_id: &PeerId,
-    ) -> Result<()> {
-        use tokio::io::AsyncReadExt;
-        use tokio::io::AsyncWriteExt;
-
-        let mut resp = vec![0u8; 68];
-        self.stream
-            .read_exact(&mut resp)
-            .await
-            .map_err(|e| TorrentError::Network(e.to_string()))?;
-
-        if resp[0] != 19 || &resp[1..20] != b"BitTorrent protocol" {
-            return Err(TorrentError::Peer("Invalid handshake".to_string()));
-        }
-
-        if &resp[28..48] != info_hash.as_bytes() {
-            return Err(TorrentError::Peer("Info hash mismatch".to_string()));
-        }
-
-        let mut peer_id = [0u8; 20];
-        peer_id.copy_from_slice(&resp[48..68]);
-        self.peer_id = Some(PeerId(peer_id));
-
-        let mut msg = Vec::with_capacity(68);
-        msg.push(19);
-        msg.extend_from_slice(b"BitTorrent protocol");
-        let mut reserved = [0u8; 8];
-        reserved[5] = 0x10 | 0x04; // BEP-10 + BEP-9
-        msg.extend_from_slice(&reserved);
-        msg.extend_from_slice(info_hash.as_bytes());
-        msg.extend_from_slice(&my_peer_id.0);
-
-        self.stream
-            .write_all(&msg)
-            .await
-            .map_err(|e| TorrentError::Network(e.to_string()))?;
 
         Ok(())
     }

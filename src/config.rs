@@ -28,6 +28,8 @@ pub struct Config {
     pub auto_resume: bool,
     pub pipeline_depth: u32,
     pub minimize_to_tray: bool,
+    #[serde(default)]
+    pub sequential_download: bool,
 }
 
 impl Default for Config {
@@ -59,6 +61,7 @@ impl Default for Config {
             auto_resume: true,
             pipeline_depth: 32,
             minimize_to_tray: false,
+            sequential_download: false,
         }
     }
 }

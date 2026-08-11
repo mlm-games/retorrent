@@ -7,6 +7,15 @@ use std::time::Instant;
 
 const ISSUED_TIMEOUT_SECS: u64 = 30;
 
+fn prio_rank(p: FilePriority) -> u8 {
+    match p {
+        FilePriority::High => 0,
+        FilePriority::Normal => 1,
+        FilePriority::Low => 2,
+        FilePriority::Skip => 3,
+    }
+}
+
 #[derive(Debug)]
 pub struct PieceCollector {
     #[allow(dead_code)]
@@ -208,7 +217,7 @@ impl PieceManager {
         }
     }
 
-    pub fn select_piece(&self, peer_bitfield: &[u8]) -> Vec<u32> {
+    pub fn select_piece(&self, peer_bitfield: &[u8], sequential: bool) -> Vec<u32> {
         let have = self.have.lock();
         let in_progress = self.in_progress.lock();
         let avail = self.piece_availability.lock();
@@ -247,28 +256,37 @@ impl PieceManager {
             return Vec::new();
         }
 
-        candidates.sort_by(|a, b| {
-            fn prio_rank(p: FilePriority) -> u8 {
-                match p {
-                    FilePriority::High => 0,
-                    FilePriority::Normal => 1,
-                    FilePriority::Low => 2,
-                    FilePriority::Skip => 3,
-                }
-            }
-            prio_rank(a.prio)
-                .cmp(&prio_rank(b.prio))
-                .then(a.avail.cmp(&b.avail))
-        });
+        if sequential {
+            candidates.sort_by(|a, b| {
+                prio_rank(a.prio)
+                    .cmp(&prio_rank(b.prio))
+                    .then(a.index.cmp(&b.index))
+            });
+        } else {
+            candidates.sort_by(|a, b| {
+                prio_rank(a.prio)
+                    .cmp(&prio_rank(b.prio))
+                    .then(a.avail.cmp(&b.avail))
+            });
+        }
 
         let best_prio = candidates[0].prio;
         let best_avail = candidates[0].avail;
-        candidates
-            .iter()
-            .filter(|c| c.prio == best_prio && c.avail <= best_avail + 2)
-            .take(10)
-            .map(|c| c.index)
-            .collect()
+        if sequential {
+            candidates
+                .iter()
+                .filter(|c| c.prio == best_prio)
+                .take(10)
+                .map(|c| c.index)
+                .collect()
+        } else {
+            candidates
+                .iter()
+                .filter(|c| c.prio == best_prio && c.avail <= best_avail + 2)
+                .take(10)
+                .map(|c| c.index)
+                .collect()
+        }
     }
 
     pub fn is_in_endgame(&self) -> bool {

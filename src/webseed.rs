@@ -17,7 +17,7 @@
 //! refuse to use `url-list` when the torrent's `private` flag is set.
 
 use std::sync::Arc;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::time::Duration;
 
 use parking_lot::Mutex;
@@ -38,10 +38,13 @@ pub struct WebseedSource {
     pub stats: Arc<parking_lot::Mutex<TorrentStats>>,
     pub total_downloaded: Arc<AtomicU64>,
     pub cancel: CancellationToken,
+    /// Set when the session is soft-paused; the worker idles instead of
+    /// fetching more pieces.
+    pub paused: Arc<AtomicBool>,
 }
 
 struct FileChunk {
-    url: String,
+    file_path: String,
     file_offset: u64,
     len: u64,
 }
@@ -86,6 +89,10 @@ impl WebseedSource {
         loop {
             if self.cancel.is_cancelled() {
                 break;
+            }
+            if self.paused.load(Ordering::Relaxed) {
+                tokio::time::sleep(Duration::from_secs(2)).await;
+                continue;
             }
             if self.piece_manager.is_complete() {
                 break;
@@ -140,6 +147,7 @@ impl WebseedSource {
             stats: self.stats.clone(),
             total_downloaded: self.total_downloaded.clone(),
             cancel: self.cancel.clone(),
+            paused: self.paused.clone(),
         }
     }
 
@@ -163,42 +171,20 @@ impl WebseedSource {
         // can split into 7+ small files; doing those serially would
         // cost 7× the latency. `join_all` preserves input order, so
         // the resulting bytes line up with the chunks vector.
+        // Each chunk tries every configured webseed URL in order until
+        // one succeeds, so a dead source doesn't stall the torrent.
+        let bases = self.meta.url_list.clone();
         let fetches = chunks.iter().map(|chunk| {
             let http = http.clone();
-            let url = chunk.url.clone();
+            let bases = bases.clone();
+            let file_path = chunk.file_path.clone();
             let file_offset = chunk.file_offset;
             let len = chunk.len;
             async move {
-                debug!(
-                    "webseed: GET {} bytes {}-{} for piece {}",
-                    url,
-                    file_offset,
-                    file_offset + len,
-                    idx
-                );
-                let resp = match http
-                    .get(&url)
-                    .header(
-                        "Range",
-                        format!("bytes={}-{}", file_offset, file_offset + len - 1),
-                    )
-                    .send()
-                    .await
-                {
-                    Ok(r) => r,
-                    Err(e) => return Err(format!("send: {}", e)),
-                };
-                if !resp.status().is_success() {
-                    return Err(format!("status {}", resp.status()));
-                }
-                let bytes = match resp.bytes().await {
-                    Ok(b) => b,
-                    Err(e) => return Err(format!("read: {}", e)),
-                };
-                if bytes.len() as u64 != len {
-                    return Err(format!("short read: got {} expected {}", bytes.len(), len));
-                }
-                Ok::<_, String>(bytes.to_vec())
+                fetch_chunk(
+                    &http, &bases, file_path, file_offset, len, idx,
+                )
+                .await
             }
         });
         let results: Vec<Result<Vec<u8>, String>> = futures::future::join_all(fetches).await;
@@ -258,14 +244,8 @@ impl WebseedSource {
             }
             let skip = abs.saturating_sub(file_start);
             let take = std::cmp::min(remaining, file_info.length - skip);
-            let url = self
-                .meta
-                .url_list
-                .first()
-                .ok_or_else(|| "no webseed url available".to_string())?;
-            let url = self.meta.webseed_url_for(url, &file_info.path);
             out.push(FileChunk {
-                url,
+                file_path: file_info.path.clone(),
                 file_offset: skip,
                 len: take,
             });
@@ -277,6 +257,58 @@ impl WebseedSource {
         }
         Ok(out)
     }
+}
+
+/// Fetch a single per-file byte range, trying each configured webseed URL
+/// in order until one returns the full expected length.
+async fn fetch_chunk(
+    http: &reqwest::Client,
+    bases: &[String],
+    file_path: String,
+    file_offset: u64,
+    len: u64,
+    piece_idx: u32,
+) -> Result<Vec<u8>, String> {
+    let mut last_err = "no webseed url available".to_string();
+    for base in bases {
+        let url = crate::metainfo::MetaInfo::webseed_url_for_static(base, &file_path);
+        debug!(
+            "webseed: GET {} bytes {}-{} for piece {}",
+            url,
+            file_offset,
+            file_offset + len,
+            piece_idx
+        );
+        let resp = match http
+            .get(&url)
+            .header("Range", format!("bytes={}-{}", file_offset, file_offset + len - 1))
+            .send()
+            .await
+        {
+            Ok(r) => r,
+            Err(e) => {
+                last_err = format!("send {}: {}", url, e);
+                continue;
+            }
+        };
+        if !resp.status().is_success() {
+            last_err = format!("status {} from {}", resp.status(), url);
+            continue;
+        }
+        let bytes = match resp.bytes().await {
+            Ok(b) => b,
+            Err(e) => {
+                last_err = format!("read {}: {}", url, e);
+                continue;
+            }
+        };
+        if bytes.len() as u64 != len {
+            last_err = format!("short read: got {} expected {} from {}", bytes.len(), len, url);
+            continue;
+        }
+        return Ok(bytes.to_vec());
+    }
+    Err(last_err)
 }
 
 #[cfg(test)]
@@ -400,6 +432,7 @@ mod tests {
             })),
             total_downloaded: Arc::new(AtomicU64::new(0)),
             cancel: CancellationToken::new(),
+            paused: Arc::new(AtomicBool::new(false)),
         };
         let chunks = source
             .split_piece_into_file_chunks(0, 256 * 1024)
