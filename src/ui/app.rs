@@ -78,10 +78,7 @@ fn matches_filter(t: &TorrentRow, filter: FilterState) -> bool {
         }
         FilterState::Seeding => t.stats.state == TorrentState::Seeding,
         FilterState::Paused => {
-            matches!(
-                t.stats.state,
-                TorrentState::Paused | TorrentState::Queued
-            )
+            matches!(t.stats.state, TorrentState::Paused | TorrentState::Queued)
         }
         FilterState::Complete => {
             matches!(
@@ -510,7 +507,12 @@ fn main_shell_view(
             .background(th.surface_container)
             .border(1.0, th.outline_variant, 18.0)
             .clip_rounded(18.0))
-        .child(details_panel_view_v2(selected_torrent, active_tab, engine, rt)),
+        .child(details_panel_view_v2(
+            selected_torrent,
+            active_tab,
+            engine,
+            rt,
+        )),
     ))
 }
 
@@ -1053,6 +1055,8 @@ fn torrent_card_view(
             hovered: th.surface_container_high,
             pressed: th.primary_container.with_alpha(120),
             disabled: bg,
+            focused: bg,
+            dragged: bg,
         })
         .on_click({
             let selected = selected.clone();
@@ -2064,29 +2068,30 @@ fn settings_dialog_view(
                                 .size(12.0)
                                 .color(th.on_surface_variant)
                                 .modifier(Modifier::new().width(150.0)),
-                            FlowRow(
-                                Modifier::new().flex_grow(1.0),
-                            )
-                            .child(
-                                [EncryptionMode::Prefer, EncryptionMode::Require, EncryptionMode::Disable]
-                                    .into_iter()
-                                    .map(|mode| {
-                                        let selected = cfg.encryption_mode == mode;
-                                        let c = config.clone();
-                                        material3::FilterChip(
-                                            selected,
-                                            move || {
-                                                let mut nc = c.get();
-                                                nc.encryption_mode = mode;
-                                                c.set(nc);
-                                            },
-                                            Text(mode_label(mode)).size(11.0),
-                                            None,
-                                            None,
-                                            ChipConfig::default(),
-                                        )
-                                    })
-                                    .collect::<Vec<_>>(),
+                            FlowRow(Modifier::new().flex_grow(1.0)).child(
+                                [
+                                    EncryptionMode::Prefer,
+                                    EncryptionMode::Require,
+                                    EncryptionMode::Disable,
+                                ]
+                                .into_iter()
+                                .map(|mode| {
+                                    let selected = cfg.encryption_mode == mode;
+                                    let c = config.clone();
+                                    material3::FilterChip(
+                                        selected,
+                                        move || {
+                                            let mut nc = c.get();
+                                            nc.encryption_mode = mode;
+                                            c.set(nc);
+                                        },
+                                        Text(mode_label(mode)).size(11.0),
+                                        None,
+                                        None,
+                                        ChipConfig::default(),
+                                    )
+                                })
+                                .collect::<Vec<_>>(),
                             ),
                         )),
                     );
@@ -2200,14 +2205,18 @@ fn settings_dialog_view(
                     views.push(Box(Modifier::new().height(th.spacing.sm)));
                     views.push(field_row("Max Active Uploads:", &max_active_ul_input));
                     views.push(Box(Modifier::new().height(th.spacing.sm)));
-                    views.push(switch_row("Sequential Download", cfg.sequential_download, {
-                        let c = config.clone();
-                        Rc::new(move |v| {
-                            let mut nc = c.get();
-                            nc.sequential_download = v;
-                            c.set(nc);
-                        })
-                    }));
+                    views.push(switch_row(
+                        "Sequential Download",
+                        cfg.sequential_download,
+                        {
+                            let c = config.clone();
+                            Rc::new(move |v| {
+                                let mut nc = c.get();
+                                nc.sequential_download = v;
+                                c.set(nc);
+                            })
+                        },
+                    ));
 
                     // Seeding
                     views.push(Box(Modifier::new().height(th.spacing.md)));
