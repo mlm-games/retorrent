@@ -3484,7 +3484,7 @@ dependencies = [
 
 [[package]]
 name = "retorrent"
-version = "0.3.6"
+version = "0.3.7"
 dependencies = [
  "android_logger",
  "anyhow",
