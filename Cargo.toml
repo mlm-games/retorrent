@@ -30,7 +30,7 @@ icon = "@drawable/ic_launcher_monochrome"
 [package.metadata.android.sdk]
 version_code = 16777991
 min_sdk_version = 26
-target_sdk_version = 35
+target_sdk_version = 37
 
 [[package.metadata.android.uses_permission]]
 name = "android.permission.INTERNET"

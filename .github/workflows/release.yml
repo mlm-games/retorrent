@@ -30,13 +30,13 @@ env:
   CARGO_TERM_COLOR: always
   APP_NAME: "Retorrent"
   APP_SLUG: "retorrent"
-  ANDROID_API: "36"
-  ANDROID_BUILD_TOOLS: "36.0.0"
-  ANDROID_NDK_VERSION: "28.2.13676358"
-  ANDROID_D8_VERSION: "8.10.9-dev"
+  ANDROID_API: "37.0"
+  ANDROID_BUILD_TOOLS: "37.0.0"
+  ANDROID_NDK_VERSION: "29.0.14206865"
+  ANDROID_D8_VERSION: ""
   CARGO_RAPK_PAGE_SIZE_KB: "16"
   ANDROID_TARGET: "aarch64-linux-android"
-  CARGO_RAPK_VERSION: "0.17.2"
+  CARGO_RAPK_VERSION: "0.19.5"
   JAVA_VERSION: "21"
   JAVA_DISTRIBUTION: "temurin"
 
@@ -282,6 +282,7 @@ jobs:
         run: cargo install cargo-rapk@${{ env.CARGO_RAPK_VERSION }} --locked
 
       - name: Download pinned D8 jar
+        if: env.ANDROID_D8_VERSION != ''
         shell: bash
         run: |
           set -euo pipefail
