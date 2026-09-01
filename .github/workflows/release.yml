@@ -57,6 +57,7 @@ jobs:
       android-ndk-version: '29.0.14206865'
       java-version: '21'
       java-distribution: 'temurin'
+      kotlin-version: '2.2.10'
       include-android: true
       include-universal: true
       play-track: ${{ inputs.play_track }}
