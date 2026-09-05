@@ -51,7 +51,7 @@ jobs:
       app-slug: "retorrent"
       bin-name: "retorrent-desktop"
       os-matrix: '["ubuntu-26.04","ubuntu-26.04-arm","macos-latest","windows-latest"]'
-      cargo-rapk-version: '0.19.5'
+      cargo-rapk-version: '0.20.0'
       android-api: '37.0'
       android-build-tools: '37.0.0'
       android-ndk-version: '29.0.14206865'
