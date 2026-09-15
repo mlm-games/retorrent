@@ -149,10 +149,10 @@ jobs:
       - name: Load pins from release.yml
         run: |
           # yadaw style (with) or retorrent env style — try both
-          API=$(sed -E -n 's/.*android-api.*"(.*)".*/\1/p' .github/workflows/release.yml | head -1)
-          BT=$(sed -E -n 's/.*android-build-tools.*"(.*)".*/\1/p' .github/workflows/release.yml | head -1)
-          NDK=$(sed -E -n 's/.*android-ndk-version.*"(.*)".*/\1/p' .github/workflows/release.yml | head -1)
-          RAPK=$(sed -E -n 's/.*cargo-rapk-version.*"(.*)".*/\1/p' .github/workflows/release.yml | head -1)
+          API=$(sed -E -n 's/.*android-api.*['\''"](.*)['\''"].*/\1/p' .github/workflows/release.yml | head -1)
+          BT=$(sed -E -n 's/.*android-build-tools.*['\''"](.*)['\''"].*/\1/p' .github/workflows/release.yml | head -1)
+          NDK=$(sed -E -n 's/.*android-ndk-version.*['\''"](.*)['\''"].*/\1/p' .github/workflows/release.yml | head -1)
+          RAPK=$(sed -E -n 's/.*cargo-rapk-version.*['\''"](.*)['\''"].*/\1/p' .github/workflows/release.yml | head -1)
           # fallback to env style (ANDROID_API: "37.0")
           if [ -z "$API" ]; then API=$(grep -m1 'ANDROID_API' .github/workflows/release.yml | sed -E 's/.*"([^"]+)".*/\1/'); fi
           if [ -z "$BT" ]; then BT=$(grep -m1 'ANDROID_BUILD_TOOLS' .github/workflows/release.yml | sed -E 's/.*"([^"]+)".*/\1/'); fi
