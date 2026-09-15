@@ -30,5 +30,5 @@ repose_material::material_symbols! {
 }
 
 pub fn icon(symbol: Symbol, size: f32, color: Color) -> View {
-    Icon(symbol).size(size).color(color)
+    Icon(symbol).size(size.sp()).color(color)
 }

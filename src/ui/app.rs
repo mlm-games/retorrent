@@ -119,12 +119,13 @@ fn show_snackbar(snackbar: &SnackbarController, msg: String) {
         message: msg.clone(),
         action: None,
         duration_ms: 4000,
-        builder: Rc::new(move || {
+        builder: Rc::new(move |dismissing: bool| {
             SnackbarView(
                 msg.clone(),
                 None::<SnackbarAction>,
                 Modifier::new(),
                 SnackbarConfig::default(),
+                dismissing,
             )
         }),
     });
@@ -487,26 +488,26 @@ fn main_shell_view(
 
     Row(Modifier::new()
         .fill_max_size()
-        .padding(12.0)
+        .padding(12.0.dp())
         .background(th.background))
     .child((
         Box(Modifier::new()
-            .width(440.0)
+            .width(440.0.dp())
             .fill_max_height()
             .background(th.surface_container_low)
-            .border(1.0, th.outline_variant, 18.0)
-            .clip_rounded(18.0))
+            .border(1.0.dp(), th.outline_variant, 18.0.dp())
+            .clip_rounded(18.0.dp()))
         .child(Column(Modifier::new().fill_max_size()).child((
             filter_search_panel(filter_state, search_query),
             torrent_list_view(torrents, filtered_indices, selected),
         ))),
-        Box(Modifier::new().width(12.0)),
+        Box(Modifier::new().width(12.0.dp())),
         Box(Modifier::new()
             .flex_grow(1.0)
             .fill_max_height()
             .background(th.surface_container)
-            .border(1.0, th.outline_variant, 18.0)
-            .clip_rounded(18.0))
+            .border(1.0.dp(), th.outline_variant, 18.0.dp())
+            .clip_rounded(18.0.dp()))
         .child(details_panel_view_v2(
             selected_torrent,
             active_tab,
@@ -535,8 +536,8 @@ fn top_bar_view(
 
     Row(Modifier::new()
         .fill_max_width()
-        .height(72.0)
-        .padding(12.0)
+        .height(72.0.dp())
+        .padding(12.0.dp())
         .background(th.surface)
         .align_items(AlignItems::CENTER))
     .child({
@@ -546,9 +547,9 @@ fn top_bar_view(
         children.push(
             Row(Modifier::new().align_items(AlignItems::CENTER)).child((
                 Box(Modifier::new()
-                    .size(44.0, 44.0)
+                    .size(44.0.dp(), 44.0.dp())
                     .background(th.primary_container)
-                    .clip_rounded(14.0))
+                    .clip_rounded(14.0.dp()))
                 .child(
                     Box(Modifier::new()
                         .fill_max_size()
@@ -556,17 +557,17 @@ fn top_bar_view(
                         .justify_content(JustifyContent::CENTER))
                     .child(icon(Symbols::CLOUD_DOWNLOAD, 24.0, th.on_primary_container)),
                 ),
-                Box(Modifier::new().width(12.0)),
+                Box(Modifier::new().width(12.0.dp())),
                 Column(Modifier::new()).child((
-                    Text("Retorrent").size(18.0).color(th.on_surface),
+                    Text("Retorrent").size(18.0.sp()).color(th.on_surface),
                     Text(format!("{} torrents", torrents.len()))
-                        .size(12.0)
+                        .size(12.0.sp())
                         .color(th.on_surface_variant),
                 )),
             )),
         );
 
-        children.push(Box(Modifier::new().width(24.0)));
+        children.push(Box(Modifier::new().width(24.0.dp())));
 
         #[cfg(not(target_os = "android"))]
         children.push(stat_pill(
@@ -575,7 +576,7 @@ fn top_bar_view(
             theme::downloading(),
         ));
         #[cfg(not(target_os = "android"))]
-        children.push(Box(Modifier::new().width(8.0)));
+        children.push(Box(Modifier::new().width(8.0.dp())));
         #[cfg(not(target_os = "android"))]
         children.push(stat_pill(
             Symbols::UPLOAD,
@@ -586,7 +587,7 @@ fn top_bar_view(
         children.push(Spacer());
 
         children.push(Button(
-            Modifier::new().height(40.0),
+            Modifier::new().height(40.0.dp()),
             {
                 let pending_from_button = pending_from_button.clone();
                 let engine = engine.clone();
@@ -717,16 +718,16 @@ fn top_bar_view(
             || {
                 Row(Modifier::new().align_items(AlignItems::CENTER)).child((
                     icon(Symbols::FOLDER_OPEN, 18.0, th.on_primary),
-                    Box(Modifier::new().width(6.0)),
-                    Text("Torrent").size(13.0),
+                    Box(Modifier::new().width(6.0.dp())),
+                    Text("Torrent").size(13.0.sp()),
                 ))
             },
         ));
 
-        children.push(Box(Modifier::new().width(8.0)));
+        children.push(Box(Modifier::new().width(8.0.dp())));
 
         children.push(FilledTonalButton(
-            Modifier::new().height(40.0),
+            Modifier::new().height(40.0.dp()),
             {
                 let s = magnet_state.clone();
                 let ms = magnet_state.clone();
@@ -750,16 +751,16 @@ fn top_bar_view(
             || {
                 Row(Modifier::new().align_items(AlignItems::CENTER)).child((
                     icon(Symbols::LINK, 18.0, th.on_surface),
-                    Box(Modifier::new().width(6.0)),
-                    Text("Magnet").size(13.0),
+                    Box(Modifier::new().width(6.0.dp())),
+                    Text("Magnet").size(13.0.sp()),
                 ))
             },
         ));
 
-        children.push(Box(Modifier::new().width(8.0)));
+        children.push(Box(Modifier::new().width(8.0.dp())));
 
         children.push(FilledTonalButton(
-            Modifier::new().height(40.0),
+            Modifier::new().height(40.0.dp()),
             {
                 let s = url_state.clone();
                 let ms = magnet_state.clone();
@@ -783,13 +784,13 @@ fn top_bar_view(
             || {
                 Row(Modifier::new().align_items(AlignItems::CENTER)).child((
                     icon(Symbols::PUBLIC, 18.0, th.on_surface),
-                    Box(Modifier::new().width(6.0)),
-                    Text("URL").size(13.0),
+                    Box(Modifier::new().width(6.0.dp())),
+                    Text("URL").size(13.0.sp()),
                 ))
             },
         ));
 
-        children.push(Box(Modifier::new().width(8.0)));
+        children.push(Box(Modifier::new().width(8.0.dp())));
 
         children.push(IconButton(
             icon(Symbols::PAUSE, 20.0, th.on_surface_variant),
@@ -847,7 +848,7 @@ fn top_bar_view(
             IconButtonConfig::default(),
         ));
 
-        children.push(Box(Modifier::new().width(4.0)));
+        children.push(Box(Modifier::new().width(4.0.dp())));
 
         children.push(IconButton(
             icon(Symbols::SETTINGS, 20.0, th.on_surface_variant),
@@ -881,20 +882,20 @@ fn stat_pill(symbol: Symbol, value: String, color: Color) -> View {
     let th = theme();
 
     Box(Modifier::new()
-        .height(34.0)
+        .height(34.0.dp())
         .background(th.surface_container_high)
-        .border(1.0, th.outline_variant, 17.0)
-        .clip_rounded(17.0)
+        .border(1.0.dp(), th.outline_variant, 17.0.dp())
+        .clip_rounded(17.0.dp())
         .padding_values(PaddingValues {
-            left: 12.0,
-            right: 12.0,
-            top: 6.0,
-            bottom: 6.0,
+            left: 12.0.dp(),
+            right: 12.0.dp(),
+            top: 6.0.dp(),
+            bottom: 6.0.dp(),
         }))
     .child(Row(Modifier::new().align_items(AlignItems::CENTER)).child((
         icon(symbol, 17.0, color),
-        Box(Modifier::new().width(6.0)),
-        Text(value).size(12.0).color(th.on_surface),
+        Box(Modifier::new().width(6.0.dp())),
+        Text(value).size(12.0.sp()).color(th.on_surface),
     )))
 }
 
@@ -916,12 +917,12 @@ fn filter_search_panel(
     Column(
         Modifier::new()
             .fill_max_width()
-            .padding(12.0)
+            .padding(12.0.dp())
             .background(th.surface_container_low),
     )
     .child((
         TextField(
-            Modifier::new().fill_max_width().height(42.0),
+            Modifier::new().fill_max_width().height(42.0.dp()),
             search_query.get(),
             {
                 let q = search_query.clone();
@@ -932,11 +933,12 @@ fn filter_search_panel(
                 ..Default::default()
             },
         ),
-        Box(Modifier::new().height(10.0)),
+        Box(Modifier::new().height(10.0.dp())),
         FlowRow(
             Modifier::new()
                 .fill_max_width()
                 .align_items(AlignItems::CENTER),
+            FlowRowConfig::default(),
         )
         .child(
             filters
@@ -948,7 +950,7 @@ fn filter_search_panel(
                             let f = filter_state.clone();
                             move || f.set(state)
                         },
-                        Text(label).size(12.0),
+                        Text(label).size(12.0.sp()),
                         Some(icon(sym, 16.0, th.on_surface_variant)),
                         None,
                         ChipConfig::default(),
@@ -975,10 +977,10 @@ fn torrent_list_view(
             .justify_content(JustifyContent::CENTER))
         .child(
             Column(Modifier::new().align_items(AlignItems::CENTER)).child((
-                Text("No torrents found").size(15.0).color(th.on_surface),
-                Box(Modifier::new().height(4.0)),
+                Text("No torrents found").size(15.0.sp()).color(th.on_surface),
+                Box(Modifier::new().height(4.0.dp())),
                 Text("Add a .torrent file or magnet link to get started.")
-                    .size(12.0)
+                    .size(12.0.sp())
                     .color(th.on_surface_variant),
             )),
         );
@@ -991,10 +993,10 @@ fn torrent_list_view(
             Modifier::new()
                 .fill_max_width()
                 .padding_values(PaddingValues {
-                    left: 8.0,
-                    right: 8.0,
-                    top: 0.0,
-                    bottom: 8.0,
+                    left: 8.0.dp(),
+                    right: 8.0.dp(),
+                    top: 0.0.dp(),
+                    bottom: 8.0.dp(),
                 }),
         )
         .child(
@@ -1034,22 +1036,22 @@ fn torrent_card_view(
     Box(Modifier::new()
         .fill_max_width()
         .padding_values(PaddingValues {
-            left: 4.0,
-            right: 4.0,
-            top: 4.0,
-            bottom: 8.0,
+            left: 4.0.dp(),
+            right: 4.0.dp(),
+            top: 4.0.dp(),
+            bottom: 8.0.dp(),
         })
         .background(bg)
         .border(
-            1.0,
+            1.0.dp(),
             if is_selected {
                 th.primary
             } else {
                 th.outline_variant
             },
-            16.0,
+            16.0.dp(),
         )
-        .clip_rounded(16.0)
+        .clip_rounded(16.0.dp())
         .state_colors(StateColors {
             default: bg,
             hovered: th.surface_container_high,
@@ -1065,28 +1067,28 @@ fn torrent_card_view(
     .child(
         Row(Modifier::new().fill_max_width()).child((
             Box(Modifier::new()
-                .width(4.0)
+                .width(4.0.dp())
                 .fill_max_height()
                 .background(state_color)),
-            Column(Modifier::new().fill_max_width().padding(12.0)).child((
+            Column(Modifier::new().fill_max_width().padding(12.0.dp())).child((
                 Row(Modifier::new()
                     .fill_max_width()
                     .align_items(AlignItems::CENTER))
                 .child((
                     icon(state_symbol, 20.0, state_color),
-                    Box(Modifier::new().width(8.0)),
+                    Box(Modifier::new().width(8.0.dp())),
                     Text(&torrent.name)
-                        .size(14.0)
+                        .size(14.0.sp())
                         .color(th.on_surface)
                         .overflow_ellipsize(),
                     Spacer(),
                     Text(format_bytes(torrent.total_size))
-                        .size(11.0)
+                        .size(11.0.sp())
                         .color(th.on_surface_variant),
                 )),
-                Box(Modifier::new().height(8.0)),
+                Box(Modifier::new().height(8.0.dp())),
                 components::progress_bar_view(torrent.display_progress, torrent.stats.state),
-                Box(Modifier::new().height(8.0)),
+                Box(Modifier::new().height(8.0.dp())),
                 Row(Modifier::new()
                     .fill_max_width()
                     .align_items(AlignItems::CENTER))
@@ -1097,15 +1099,15 @@ fn torrent_card_view(
                         format_speed(torrent.stats.download_rate),
                         theme::downloading(),
                     ));
-                    m.push(Box(Modifier::new().width(8.0)));
+                    m.push(Box(Modifier::new().width(8.0.dp())));
                     m.push(metric_compact(
                         Symbols::UPLOAD,
                         format_speed(torrent.stats.upload_rate),
                         theme::seeding(),
                     ));
-                    m.push(Box(Modifier::new().width(8.0)));
+                    m.push(Box(Modifier::new().width(8.0.dp())));
                     m.push(metric_text(format!("{} seeds", torrent.stats.seeders)));
-                    m.push(Box(Modifier::new().width(8.0)));
+                    m.push(Box(Modifier::new().width(8.0.dp())));
                     m.push(metric_text(format!(
                         "{} peers",
                         torrent.stats.connected_peers
@@ -1113,7 +1115,7 @@ fn torrent_card_view(
                     m.push(Spacer());
                     m.push(
                         Text(format_eta(torrent.stats.eta_seconds))
-                            .size(11.0)
+                            .size(11.0.sp())
                             .color(th.on_surface_variant),
                     );
                     m
@@ -1128,13 +1130,13 @@ fn metric_compact(symbol: Symbol, value: String, color: Color) -> View {
 
     Row(Modifier::new().align_items(AlignItems::CENTER)).child((
         icon(symbol, 14.0, color),
-        Box(Modifier::new().width(3.0)),
-        Text(value).size(10.5).color(th.on_surface_variant),
+        Box(Modifier::new().width(3.0.dp())),
+        Text(value).size(10.5.sp()).color(th.on_surface_variant),
     ))
 }
 
 fn metric_text(value: String) -> View {
-    Text(value).size(10.5).color(theme().on_surface_variant)
+    Text(value).size(10.5.sp()).color(theme().on_surface_variant)
 }
 
 fn mode_label(mode: EncryptionMode) -> &'static str {
@@ -1162,10 +1164,10 @@ fn details_panel_view_v2(
                 .justify_content(JustifyContent::CENTER))
             .child(
                 Column(Modifier::new().align_items(AlignItems::CENTER)).child((
-                    Text("Select a torrent").size(18.0).color(th.on_surface),
-                    Box(Modifier::new().height(6.0)),
+                    Text("Select a torrent").size(18.0.sp()).color(th.on_surface),
+                    Box(Modifier::new().height(6.0.dp())),
                     Text("Torrent details, files, peers, trackers, and pieces will appear here.")
-                        .size(12.0)
+                        .size(12.0.sp())
                         .color(th.on_surface_variant),
                 )),
             );
@@ -1194,7 +1196,7 @@ fn details_header(torrent: &TorrentRow) -> View {
     Column(
         Modifier::new()
             .fill_max_width()
-            .padding(18.0)
+            .padding(18.0.dp())
             .background(th.surface_container),
     )
     .child((
@@ -1203,9 +1205,9 @@ fn details_header(torrent: &TorrentRow) -> View {
             .align_items(AlignItems::CENTER))
         .child((
             Box(Modifier::new()
-                .size(46.0, 46.0)
+                .size(46.0.dp(), 46.0.dp())
                 .background(state_color.with_alpha(45))
-                .clip_rounded(14.0))
+                .clip_rounded(14.0.dp()))
             .child(
                 Box(Modifier::new()
                     .fill_max_size()
@@ -1217,11 +1219,11 @@ fn details_header(torrent: &TorrentRow) -> View {
                     state_color,
                 )),
             ),
-            Box(Modifier::new().width(12.0)),
+            Box(Modifier::new().width(12.0.dp())),
             Column(Modifier::new().flex_grow(1.0)).child((
-                Text(&torrent.name).size(18.0).color(th.on_surface),
+                Text(&torrent.name).size(18.0.sp()).color(th.on_surface),
                 Text(torrent.stats.state.to_string())
-                    .size(12.0)
+                    .size(12.0.sp())
                     .color(th.on_surface_variant),
             )),
             stat_pill(
@@ -1229,14 +1231,14 @@ fn details_header(torrent: &TorrentRow) -> View {
                 format_speed(torrent.stats.download_rate),
                 theme::downloading(),
             ),
-            Box(Modifier::new().width(8.0)),
+            Box(Modifier::new().width(8.0.dp())),
             stat_pill(
                 Symbols::UPLOAD,
                 format_speed(torrent.stats.upload_rate),
                 theme::seeding(),
             ),
         )),
-        Box(Modifier::new().height(14.0)),
+        Box(Modifier::new().height(14.0.dp())),
         components::progress_bar_view(torrent.display_progress, torrent.stats.state),
     ))
 }
@@ -1288,7 +1290,7 @@ fn general_tab_view_v2(
     ScrollArea(
         Modifier::new().fill_max_size(),
         remember_scroll_state("general_tab_v2"),
-        Column(Modifier::new().fill_max_width().padding(16.0)).child((
+        Column(Modifier::new().fill_max_width().padding(16.0.dp())).child((
             Row(Modifier::new().fill_max_width()).child((
                 stat_card(
                     Symbols::CLOUD_DOWNLOAD,
@@ -1296,14 +1298,14 @@ fn general_tab_view_v2(
                     format_bytes(torrent.stats.downloaded),
                     theme::downloading(),
                 ),
-                Box(Modifier::new().width(12.0)),
+                Box(Modifier::new().width(12.0.dp())),
                 stat_card(
                     Symbols::CLOUD_UPLOAD,
                     "Uploaded",
                     format_bytes(torrent.stats.uploaded),
                     theme::seeding(),
                 ),
-                Box(Modifier::new().width(12.0)),
+                Box(Modifier::new().width(12.0.dp())),
                 stat_card(
                     Symbols::SCHEDULE,
                     "ETA",
@@ -1311,7 +1313,7 @@ fn general_tab_view_v2(
                     theme::warning(),
                 ),
             )),
-            Box(Modifier::new().height(12.0)),
+            Box(Modifier::new().height(12.0.dp())),
             Row(Modifier::new().fill_max_width()).child((
                 stat_card(
                     Symbols::GROUP,
@@ -1319,14 +1321,14 @@ fn general_tab_view_v2(
                     torrent.stats.connected_peers.to_string(),
                     th.primary,
                 ),
-                Box(Modifier::new().width(12.0)),
+                Box(Modifier::new().width(12.0.dp())),
                 stat_card(
                     Symbols::UPLOAD,
                     "Seeds",
                     torrent.stats.seeders.to_string(),
                     theme::seeding(),
                 ),
-                Box(Modifier::new().width(12.0)),
+                Box(Modifier::new().width(12.0.dp())),
                 stat_card(
                     Symbols::MEMORY,
                     "Pieces",
@@ -1338,23 +1340,23 @@ fn general_tab_view_v2(
                     theme::accent(),
                 ),
             )),
-            Box(Modifier::new().height(12.0)),
+            Box(Modifier::new().height(12.0.dp())),
             Box(Modifier::new()
                 .fill_max_width()
                 .background(th.surface_container_high)
-                .border(1.0, th.outline_variant, 16.0)
-                .clip_rounded(16.0)
-                .padding(16.0))
+                .border(1.0.dp(), th.outline_variant, 16.0.dp())
+                .clip_rounded(16.0.dp())
+                .padding(16.0.dp()))
             .child(
                 Column(Modifier::new().fill_max_width()).child((
-                    Text("Actions").size(15.0).color(th.on_surface),
-                    Box(Modifier::new().height(10.0)),
+                    Text("Actions").size(15.0.sp()).color(th.on_surface),
+                    Box(Modifier::new().height(10.0.dp())),
                     Row(Modifier::new()
                         .fill_max_width()
                         .align_items(AlignItems::CENTER))
                     .child((
                         FilledTonalButton(
-                            Modifier::new().height(36.0),
+                            Modifier::new().height(36.0.dp()),
                             {
                                 let engine = engine.clone();
                                 let rt = rt.clone();
@@ -1366,16 +1368,16 @@ fn general_tab_view_v2(
                             || {
                                 Row(Modifier::new().align_items(AlignItems::CENTER)).child((
                                     icon(Symbols::REFRESH, 16.0, th.on_surface),
-                                    Box(Modifier::new().width(6.0)),
-                                    Text("Force Recheck").size(12.0),
+                                    Box(Modifier::new().width(6.0.dp())),
+                                    Text("Force Recheck").size(12.0.sp()),
                                 ))
                             },
                         ),
                         Spacer(),
                         Text("Sequential download")
-                            .size(12.0)
+                            .size(12.0.sp())
                             .color(th.on_surface_variant),
-                        Box(Modifier::new().width(6.0)),
+                        Box(Modifier::new().width(6.0.dp())),
                         Switch(
                             torrent.sequential,
                             {
@@ -1387,7 +1389,7 @@ fn general_tab_view_v2(
                     )),
                 )),
             ),
-            Box(Modifier::new().height(18.0)),
+            Box(Modifier::new().height(18.0.dp())),
             info_section(
                 "Torrent",
                 vec![
@@ -1419,19 +1421,19 @@ fn stat_card(
 
     Box(Modifier::new()
         .flex_grow(1.0)
-        .height(92.0)
+        .height(92.0.dp())
         .background(th.surface_container_high)
-        .border(1.0, th.outline_variant, 16.0)
-        .clip_rounded(16.0)
-        .padding(14.0))
+        .border(1.0.dp(), th.outline_variant, 16.0.dp())
+        .clip_rounded(16.0.dp())
+        .padding(14.0.dp()))
     .child(Column(Modifier::new().fill_max_size()).child((
         Row(Modifier::new().align_items(AlignItems::CENTER)).child((
             icon(symbol, 18.0, color),
-            Box(Modifier::new().width(6.0)),
-            Text(label.into()).size(11.0).color(th.on_surface_variant),
+            Box(Modifier::new().width(6.0.dp())),
+            Text(label.into()).size(11.0.sp()).color(th.on_surface_variant),
         )),
         Spacer(),
-        Text(value.into()).size(17.0).color(th.on_surface),
+        Text(value.into()).size(17.0.sp()).color(th.on_surface),
     )))
 }
 
@@ -1441,13 +1443,13 @@ fn info_section(title: &str, rows: Vec<(&str, String)>) -> View {
     Box(Modifier::new()
         .fill_max_width()
         .background(th.surface_container_high)
-        .border(1.0, th.outline_variant, 16.0)
-        .clip_rounded(16.0)
-        .padding(16.0))
+        .border(1.0.dp(), th.outline_variant, 16.0.dp())
+        .clip_rounded(16.0.dp())
+        .padding(16.0.dp()))
     .child(Column(Modifier::new().fill_max_width()).child({
         let mut views: Vec<View> = vec![
-            Text(title).size(15.0).color(th.on_surface),
-            Box(Modifier::new().height(10.0)),
+            Text(title).size(15.0.sp()).color(th.on_surface),
+            Box(Modifier::new().height(10.0.dp())),
         ];
 
         for (label, value) in rows {
@@ -1455,17 +1457,17 @@ fn info_section(title: &str, rows: Vec<(&str, String)>) -> View {
                 Row(Modifier::new()
                     .fill_max_width()
                     .padding_values(PaddingValues {
-                        left: 0.0,
-                        right: 0.0,
-                        top: 4.0,
-                        bottom: 4.0,
+                        left: 0.0.dp(),
+                        right: 0.0.dp(),
+                        top: 4.0.dp(),
+                        bottom: 4.0.dp(),
                     }))
                 .child((
                     Text(label)
-                        .size(12.0)
+                        .size(12.0.sp())
                         .color(th.on_surface_variant)
-                        .modifier(Modifier::new().width(130.0)),
-                    Text(value).size(12.0).color(th.on_surface),
+                        .modifier(Modifier::new().width(130.0.dp())),
+                    Text(value).size(12.0.sp()).color(th.on_surface),
                 )),
             );
         }
@@ -1485,39 +1487,39 @@ fn files_tab_view(torrent: &TorrentRow, _info_hash: InfoHash, _engine: Arc<Torre
     let state = torrent.stats.state;
 
     ScrollArea(
-        Modifier::new().fill_max_width().min_height(200.0),
+        Modifier::new().fill_max_width().min_height(200.0.dp()),
         remember_scroll_state("files_tab"),
-        Column(Modifier::new().fill_max_width().padding(4.0)).child({
+        Column(Modifier::new().fill_max_width().padding(4.0.dp())).child({
             let mut views: Vec<View> = Vec::new();
 
             views.push(
                 Row(Modifier::new()
                     .fill_max_width()
-                    .padding(4.0)
-                    .column_gap(8.0))
+                    .padding(4.0.dp())
+                    .column_gap(8.0.dp()))
                 .child((
                     Text("File")
-                        .size(12.0)
+                        .size(12.0.sp())
                         .color(th.on_surface)
-                        .modifier(Modifier::new().flex_grow(1.0).flex_basis(0.0)),
+                        .modifier(Modifier::new().flex_grow(1.0).flex_basis(0.0.dp())),
                     Text("Size")
-                        .size(12.0)
+                        .size(12.0.sp())
                         .color(th.on_surface)
-                        .modifier(Modifier::new().width(80.0)),
+                        .modifier(Modifier::new().width(80.0.dp())),
                     Text("Progress")
-                        .size(12.0)
+                        .size(12.0.sp())
                         .color(th.on_surface)
-                        .modifier(Modifier::new().flex_grow(2.0).flex_basis(0.0)),
+                        .modifier(Modifier::new().flex_grow(2.0).flex_basis(0.0.dp())),
                     Text("Priority")
-                        .size(12.0)
+                        .size(12.0.sp())
                         .color(th.on_surface)
-                        .modifier(Modifier::new().width(70.0)),
+                        .modifier(Modifier::new().width(70.0.dp())),
                 )),
             );
 
             views.push(Box(Modifier::new()
                 .fill_max_width()
-                .height(1.0)
+                .height(1.0.dp())
                 .background(th.outline_variant)));
 
             for (fi, file) in files.iter().enumerate() {
@@ -1544,30 +1546,30 @@ fn files_tab_view(torrent: &TorrentRow, _info_hash: InfoHash, _engine: Arc<Torre
                 views.push(
                     Row(Modifier::new()
                         .fill_max_width()
-                        .padding(2.0)
-                        .column_gap(8.0))
+                        .padding(2.0.dp())
+                        .column_gap(8.0.dp()))
                     .child((
                         Text(display_name)
-                            .size(11.0)
+                            .size(11.0.sp())
                             .color(th.on_surface)
                             .single_line()
                             .overflow_ellipsize()
                             .modifier(
                                 Modifier::new()
                                     .flex_grow(1.0)
-                                    .flex_basis(0.0)
-                                    .min_width(0.0),
+                                    .flex_basis(0.0.dp())
+                                    .min_width(0.0.dp()),
                             ),
                         Text(format_bytes(file.length))
-                            .size(11.0)
+                            .size(11.0.sp())
                             .color(th.on_surface)
-                            .modifier(Modifier::new().width(80.0)),
-                        Box(Modifier::new().flex_grow(2.0).flex_basis(0.0))
+                            .modifier(Modifier::new().width(80.0.dp())),
+                        Box(Modifier::new().flex_grow(2.0).flex_basis(0.0.dp()))
                             .child(file_progress_view(file_progress, state)),
                         Text(current_prio.to_string())
-                            .size(11.0)
+                            .size(11.0.sp())
                             .color(th.on_surface)
-                            .modifier(Modifier::new().width(70.0)),
+                            .modifier(Modifier::new().width(70.0.dp())),
                     )),
                 );
             }
@@ -1581,19 +1583,19 @@ fn peers_tab_view(torrent: &TorrentRow) -> View {
     Column(
         Modifier::new()
             .fill_max_width()
-            .min_height(200.0)
-            .padding(8.0),
+            .min_height(200.0.dp())
+            .padding(8.0.dp()),
     )
     .child((
         Text(format!(
             "Connected Peers: {}",
             torrent.stats.connected_peers
         ))
-        .size(12.0)
+        .size(12.0.sp())
         .color(th.on_surface),
-        Box(Modifier::new().height(8.0)),
+        Box(Modifier::new().height(8.0.dp())),
         Text("(Peer details shown during active connections)")
-            .size(11.0)
+            .size(11.0.sp())
             .color(th.on_surface_variant),
     ))
 }
@@ -1601,9 +1603,9 @@ fn peers_tab_view(torrent: &TorrentRow) -> View {
 fn trackers_tab_view(torrent: &TorrentRow) -> View {
     let th = theme();
     ScrollArea(
-        Modifier::new().fill_max_width().min_height(200.0),
+        Modifier::new().fill_max_width().min_height(200.0.dp()),
         remember_scroll_state("trackers_tab"),
-        Column(Modifier::new().fill_max_width().padding(8.0)).child(
+        Column(Modifier::new().fill_max_width().padding(8.0.dp())).child(
             torrent
                 .trackers
                 .iter()
@@ -1611,10 +1613,10 @@ fn trackers_tab_view(torrent: &TorrentRow) -> View {
                 .map(|(idx, tracker)| {
                     Row(Modifier::new().fill_max_width()).child((
                         Text(format!("{}.", idx + 1))
-                            .size(11.0)
+                            .size(11.0.sp())
                             .color(th.on_surface_variant),
-                        Box(Modifier::new().width(4.0)),
-                        Text(tracker).size(11.0).color(theme::accent()),
+                        Box(Modifier::new().width(4.0.dp())),
+                        Text(tracker).size(11.0.sp()).color(theme::accent()),
                     ))
                 })
                 .collect::<Vec<_>>(),
@@ -1626,14 +1628,14 @@ fn pieces_tab_view(torrent: &TorrentRow) -> View {
     let th = theme();
     let completed = torrent.have_pieces.iter().filter(|&&v| v).count();
 
-    Column(Modifier::new().fill_max_size().padding(8.0)).child((
+    Column(Modifier::new().fill_max_size().padding(8.0.dp())).child((
         Text(format!(
             "Pieces: {} / {} completed",
             completed, torrent.num_pieces
         ))
-        .size(12.0)
+        .size(12.0.sp())
         .color(th.on_surface),
-        Box(Modifier::new().height(8.0)),
+        Box(Modifier::new().height(8.0.dp())),
         ScrollArea(
             Modifier::new().fill_max_width().flex_grow(1.0),
             remember_scroll_state("pieces_tab"),
@@ -1657,11 +1659,11 @@ fn magnet_dialog_view(
         overlay,
         Modifier::new(),
         DialogProperties::default(),
-        Column(Modifier::new().padding(24.0).min_width(400.0)).child((
-            Text("Add Magnet Link").size(18.0).color(th.on_surface),
-            Box(Modifier::new().height(12.0)),
+        Column(Modifier::new().padding(24.0.dp()).min_width(400.0.dp())).child((
+            Text("Add Magnet Link").size(18.0.sp()).color(th.on_surface),
+            Box(Modifier::new().height(12.0.dp())),
             TextField(
-                Modifier::new().fill_max_width().height(60.0),
+                Modifier::new().fill_max_width().height(60.0.dp()),
                 magnet_input.get(),
                 {
                     let m = magnet_input.clone();
@@ -1672,7 +1674,7 @@ fn magnet_dialog_view(
                     ..Default::default()
                 },
             ),
-            Box(Modifier::new().height(16.0)),
+            Box(Modifier::new().height(16.0.dp())),
             Row(Modifier::new()
                 .align_items(AlignItems::CENTER)
                 .justify_content(JustifyContent::END))
@@ -1690,7 +1692,7 @@ fn magnet_dialog_view(
                     ButtonConfig::default(),
                     || Text("Cancel"),
                 ),
-                Box(Modifier::new().width(8.0)),
+                Box(Modifier::new().width(8.0.dp())),
                 Button(
                     Modifier::new(),
                     {
@@ -1740,11 +1742,11 @@ fn url_dialog_view(
         overlay,
         Modifier::new(),
         DialogProperties::default(),
-        Column(Modifier::new().padding(24.0).min_width(400.0)).child((
-            Text("Add Torrent from URL").size(18.0).color(th.on_surface),
-            Box(Modifier::new().height(12.0)),
+        Column(Modifier::new().padding(24.0.dp()).min_width(400.0.dp())).child((
+            Text("Add Torrent from URL").size(18.0.sp()).color(th.on_surface),
+            Box(Modifier::new().height(12.0.dp())),
             TextField(
-                Modifier::new().fill_max_width().height(60.0),
+                Modifier::new().fill_max_width().height(60.0.dp()),
                 url_input.get(),
                 {
                     let u = url_input.clone();
@@ -1755,7 +1757,7 @@ fn url_dialog_view(
                     ..Default::default()
                 },
             ),
-            Box(Modifier::new().height(16.0)),
+            Box(Modifier::new().height(16.0.dp())),
             Row(Modifier::new()
                 .align_items(AlignItems::CENTER)
                 .justify_content(JustifyContent::END))
@@ -1773,7 +1775,7 @@ fn url_dialog_view(
                     ButtonConfig::default(),
                     || Text("Cancel"),
                 ),
-                Box(Modifier::new().width(8.0)),
+                Box(Modifier::new().width(8.0.dp())),
                 Button(
                     Modifier::new(),
                     {
@@ -1863,13 +1865,13 @@ fn remove_dialog_view(
         overlay,
         Modifier::new(),
         DialogProperties::default(),
-        Column(Modifier::new().padding(24.0).min_width(360.0)).child((
-            Text("Remove Torrent").size(18.0).color(th.on_surface),
-            Box(Modifier::new().height(12.0)),
+        Column(Modifier::new().padding(24.0.dp()).min_width(360.0.dp())).child((
+            Text("Remove Torrent").size(18.0.sp()).color(th.on_surface),
+            Box(Modifier::new().height(12.0.dp())),
             Text("Are you sure you want to remove this torrent?")
-                .size(14.0)
+                .size(14.0.sp())
                 .color(th.on_surface_variant),
-            Box(Modifier::new().height(12.0)),
+            Box(Modifier::new().height(12.0.dp())),
             Row(Modifier::new().align_items(AlignItems::CENTER)).child((
                 Checkbox(
                     remove_delete_files.get(),
@@ -1880,10 +1882,10 @@ fn remove_dialog_view(
                     CheckboxConfig::default(),
                 ),
                 Text("  Also delete downloaded files")
-                    .size(13.0)
+                    .size(13.0.sp())
                     .color(th.on_surface),
             )),
-            Box(Modifier::new().height(16.0)),
+            Box(Modifier::new().height(16.0.dp())),
             Row(Modifier::new()
                 .align_items(AlignItems::CENTER)
                 .justify_content(JustifyContent::END))
@@ -1901,7 +1903,7 @@ fn remove_dialog_view(
                     ButtonConfig::default(),
                     || Text("Cancel"),
                 ),
-                Box(Modifier::new().width(8.0)),
+                Box(Modifier::new().width(8.0.dp())),
                 Button(
                     Modifier::new(),
                     {
@@ -1989,13 +1991,13 @@ fn settings_dialog_view(
     Dialog(
         state.clone(),
         overlay,
-        Modifier::new().max_width(540.0),
+        Modifier::new().max_width(540.0.dp()),
         DialogProperties::default(),
         Column(Modifier::new().padding(th.spacing.xl)).child((
-            Text("\u{2699} Settings").size(18.0).color(th.on_surface),
+            Text("\u{2699} Settings").size(18.0.sp()).color(th.on_surface),
             Box(Modifier::new().height(th.spacing.md)),
             ScrollArea(
-                Modifier::new().fill_max_width().max_height(400.0),
+                Modifier::new().fill_max_width().max_height(400.0.dp()),
                 {
                     let s = remember_scroll_state("settings_scroll");
                     s.set_show_scrollbar(false);
@@ -2010,9 +2012,9 @@ fn settings_dialog_view(
                             .align_items(AlignItems::CENTER))
                         .child((
                             Text(label)
-                                .size(12.0)
+                                .size(12.0.sp())
                                 .color(th.on_surface_variant)
-                                .modifier(Modifier::new().width(150.0)),
+                                .modifier(Modifier::new().width(150.0.dp())),
                             TextField(
                                 Modifier::new().flex_grow(1.0),
                                 input.get(),
@@ -2030,7 +2032,7 @@ fn settings_dialog_view(
                             .align_items(AlignItems::CENTER))
                         .child((
                             Text(label)
-                                .size(12.0)
+                                .size(12.0.sp())
                                 .color(th.on_surface_variant)
                                 .modifier(Modifier::new().flex_grow(1.0)),
                             Switch(val, move |v| on_toggle(v), SwitchConfig::default()),
@@ -2038,7 +2040,7 @@ fn settings_dialog_view(
                     };
 
                     // Network
-                    views.push(Text("Network").size(16.0).color(th.on_surface));
+                    views.push(Text("Network").size(16.0.sp()).color(th.on_surface));
                     views.push(Box(Modifier::new().height(th.spacing.sm)));
                     views.push(field_row("Listen Port:", &listen_port_input));
                     views.push(Box(Modifier::new().height(th.spacing.sm)));
@@ -2065,10 +2067,10 @@ fn settings_dialog_view(
                             .align_items(AlignItems::CENTER))
                         .child((
                             Text("Encryption")
-                                .size(12.0)
+                                .size(12.0.sp())
                                 .color(th.on_surface_variant)
-                                .modifier(Modifier::new().width(150.0)),
-                            FlowRow(Modifier::new().flex_grow(1.0)).child(
+                                .modifier(Modifier::new().width(150.0.dp())),
+                            FlowRow(Modifier::new().flex_grow(1.0), FlowRowConfig::default()).child(
                                 [
                                     EncryptionMode::Prefer,
                                     EncryptionMode::Require,
@@ -2085,7 +2087,7 @@ fn settings_dialog_view(
                                             nc.encryption_mode = mode;
                                             c.set(nc);
                                         },
-                                        Text(mode_label(mode)).size(11.0),
+                                        Text(mode_label(mode)).size(11.0.sp()),
                                         None,
                                         None,
                                         ChipConfig::default(),
@@ -2098,7 +2100,7 @@ fn settings_dialog_view(
 
                     // Bandwidth
                     views.push(Box(Modifier::new().height(th.spacing.md)));
-                    views.push(Text("Bandwidth").size(16.0).color(th.on_surface));
+                    views.push(Text("Bandwidth").size(16.0.sp()).color(th.on_surface));
                     views.push(Box(Modifier::new().height(th.spacing.sm)));
                     views.push(field_row("Max DL Rate (0=\u{221E}):", &max_dl_input));
                     views.push(Box(Modifier::new().height(th.spacing.sm)));
@@ -2106,13 +2108,13 @@ fn settings_dialog_view(
 
                     // Storage
                     views.push(Box(Modifier::new().height(th.spacing.md)));
-                    views.push(Text("Storage").size(16.0).color(th.on_surface));
+                    views.push(Text("Storage").size(16.0.sp()).color(th.on_surface));
                     views.push(Box(Modifier::new().height(th.spacing.sm)));
                     views.push(
                         Row(Modifier::new().fill_max_width()).child((
-                            Text("Directory:").size(12.0).color(th.on_surface_variant),
+                            Text("Directory:").size(12.0.sp()).color(th.on_surface_variant),
                             Text(cfg.download_dir.to_string_lossy())
-                                .size(12.0)
+                                .size(12.0.sp())
                                 .color(th.on_surface),
                         )),
                     );
@@ -2130,7 +2132,7 @@ fn settings_dialog_view(
 
                     // Features
                     views.push(Box(Modifier::new().height(th.spacing.md)));
-                    views.push(Text("Features").size(16.0).color(th.on_surface));
+                    views.push(Text("Features").size(16.0.sp()).color(th.on_surface));
                     views.push(Box(Modifier::new().height(th.spacing.sm)));
                     views.push(switch_row("DHT", cfg.dht_enabled, {
                         let c = config.clone();
@@ -2199,7 +2201,7 @@ fn settings_dialog_view(
 
                     // Queue
                     views.push(Box(Modifier::new().height(th.spacing.md)));
-                    views.push(Text("Queue").size(16.0).color(th.on_surface));
+                    views.push(Text("Queue").size(16.0.sp()).color(th.on_surface));
                     views.push(Box(Modifier::new().height(th.spacing.sm)));
                     views.push(field_row("Max Active Downloads:", &max_active_input));
                     views.push(Box(Modifier::new().height(th.spacing.sm)));
@@ -2220,7 +2222,7 @@ fn settings_dialog_view(
 
                     // Seeding
                     views.push(Box(Modifier::new().height(th.spacing.md)));
-                    views.push(Text("Seeding").size(16.0).color(th.on_surface));
+                    views.push(Text("Seeding").size(16.0.sp()).color(th.on_surface));
                     views.push(Box(Modifier::new().height(th.spacing.sm)));
                     views.push(switch_row("Seed Ratio Limit", cfg.seed_ratio_enabled, {
                         let c = config.clone();
@@ -2235,7 +2237,7 @@ fn settings_dialog_view(
 
                     // Advanced
                     views.push(Box(Modifier::new().height(th.spacing.md)));
-                    views.push(Text("Advanced").size(16.0).color(th.on_surface));
+                    views.push(Text("Advanced").size(16.0.sp()).color(th.on_surface));
                     views.push(Box(Modifier::new().height(th.spacing.sm)));
                     views.push(field_row("Choke Interval (s):", &choke_input));
                     views.push(Box(Modifier::new().height(th.spacing.sm)));
@@ -2290,7 +2292,7 @@ fn settings_dialog_view(
                     ButtonConfig::default(),
                     || Text("Cancel"),
                 ),
-                Box(Modifier::new().width(8.0)),
+                Box(Modifier::new().width(8.0.dp())),
                 Button(
                     Modifier::new(),
                     {
@@ -2554,14 +2556,14 @@ fn add_torrent_dialog_view(
                     .align_items(AlignItems::CENTER))
                 .child((
                     icon(Symbols::CLOUD_DOWNLOAD, 22.0, th.primary),
-                    Box(Modifier::new().width(10.0)),
-                    Text("Add Torrent").size(18.0).color(th.on_surface),
+                    Box(Modifier::new().width(10.0.dp())),
+                    Text("Add Torrent").size(18.0.sp()).color(th.on_surface),
                 )),
             );
-            body.push(Box(Modifier::new().height(10.0)));
+            body.push(Box(Modifier::new().height(10.0.dp())));
             body.push(
                 Text(&name)
-                    .size(13.0)
+                    .size(13.0.sp())
                     .color(th.on_surface_variant)
                     .overflow_ellipsize(),
             );
@@ -2575,21 +2577,21 @@ fn add_torrent_dialog_view(
                         if files.len() == 1 { "" } else { "s" }
                     )
                 ))
-                .size(12.0)
+                .size(12.0.sp())
                 .color(th.on_surface_variant),
             );
-            body.push(Box(Modifier::new().height(14.0)));
+            body.push(Box(Modifier::new().height(14.0.dp())));
             body.push(
                 Row(Modifier::new()
                     .fill_max_width()
                     .align_items(AlignItems::CENTER))
                 .child((
                     Text("Download to:")
-                        .size(12.0)
+                        .size(12.0.sp())
                         .color(th.on_surface_variant)
-                        .modifier(Modifier::new().width(110.0)),
+                        .modifier(Modifier::new().width(110.0.dp())),
                     TextField(
-                        Modifier::new().flex_grow(1.0).height(36.0),
+                        Modifier::new().flex_grow(1.0).height(36.0.dp()),
                         download_path_input.get(),
                         {
                             let p = download_path_input.clone();
@@ -2597,22 +2599,22 @@ fn add_torrent_dialog_view(
                         },
                         Default::default(),
                     ),
-                    Box(Modifier::new().width(6.0)),
+                    Box(Modifier::new().width(6.0.dp())),
                     FilledTonalButton(
-                        Modifier::new().height(36.0),
+                        Modifier::new().height(36.0.dp()),
                         move || pick_folder(),
                         ButtonConfig::default(),
                         || Text("Browse"),
                     ),
                 )),
             );
-            body.push(Box(Modifier::new().height(14.0)));
+            body.push(Box(Modifier::new().height(14.0.dp())));
             body.push(
                 Row(Modifier::new()
                     .fill_max_width()
                     .align_items(AlignItems::CENTER))
                 .child((
-                    Text("Files:").size(12.0).color(th.on_surface_variant),
+                    Text("Files:").size(12.0.sp()).color(th.on_surface_variant),
                     Spacer(),
                     TextButton(
                         Modifier::new(),
@@ -2620,7 +2622,7 @@ fn add_torrent_dialog_view(
                         ButtonConfig::default(),
                         || Text("Select All"),
                     ),
-                    Box(Modifier::new().width(4.0)),
+                    Box(Modifier::new().width(4.0.dp())),
                     TextButton(
                         Modifier::new(),
                         move || select_none(),
@@ -2632,17 +2634,17 @@ fn add_torrent_dialog_view(
             body.push(
                 Box(Modifier::new()
                     .fill_max_width()
-                    .height(220.0)
+                    .height(220.0.dp())
                     .background(th.surface_container_high)
-                    .border(1.0, th.outline_variant, 10.0)
-                    .clip_rounded(10.0))
+                    .border(1.0.dp(), th.outline_variant, 10.0.dp())
+                    .clip_rounded(10.0.dp()))
                 .child(ScrollArea(
                     Modifier::new().fill_max_size(),
                     remember_scroll_state("add_torrent_files"),
-                    Column(Modifier::new().fill_max_width().padding(6.0)).child(file_rows),
+                    Column(Modifier::new().fill_max_width().padding(6.0.dp())).child(file_rows),
                 )),
             );
-            body.push(Box(Modifier::new().height(16.0)));
+            body.push(Box(Modifier::new().height(16.0.dp())));
             body.push(
                 Row(Modifier::new()
                     .align_items(AlignItems::CENTER)
@@ -2664,18 +2666,18 @@ fn add_torrent_dialog_view(
                 )),
             );
 
-            Column(Modifier::new().padding(20.0).min_width(360.0)).child(body)
+            Column(Modifier::new().padding(20.0.dp()).min_width(360.0.dp())).child(body)
         } else {
-            Box(Modifier::new().size(0.0, 0.0))
+            Box(Modifier::new().size(Dp::ZERO, Dp::ZERO))
         }
     } else {
-        Box(Modifier::new().size(0.0, 0.0))
+        Box(Modifier::new().size(Dp::ZERO, Dp::ZERO))
     };
 
     Dialog(
         state.clone(),
         overlay,
-        Modifier::new().max_width(500.0).max_height(560.0),
+        Modifier::new().max_width(500.0.dp()).max_height(560.0.dp()),
         DialogProperties::default(),
         content,
     )
@@ -2700,12 +2702,12 @@ fn add_file_row_view(
     Row(Modifier::new()
         .fill_max_width()
         .padding_values(PaddingValues {
-            left: 6.0,
-            right: 6.0,
-            top: 4.0,
-            bottom: 4.0,
+            left: 6.0.dp(),
+            right: 6.0.dp(),
+            top: 4.0.dp(),
+            bottom: 4.0.dp(),
         })
-        .column_gap(8.0)
+        .column_gap(8.0.dp())
         .align_items(AlignItems::CENTER))
     .child((
         Checkbox(
@@ -2724,14 +2726,14 @@ fn add_file_row_view(
         ),
         Column(Modifier::new().flex_grow(1.0)).child((
             Text(display_name)
-                .size(12.0)
+                .size(12.0.sp())
                 .color(th.on_surface)
                 .overflow_ellipsize(),
             Text(full_path)
-                .size(10.0)
+                .size(10.0.sp())
                 .color(th.on_surface_variant)
                 .overflow_ellipsize(),
         )),
-        Text(size_text).size(11.0).color(th.on_surface_variant),
+        Text(size_text).size(11.0.sp()).color(th.on_surface_variant),
     ))
 }

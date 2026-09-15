@@ -27,9 +27,9 @@ pub fn progress_bar_view(progress: f32, state: TorrentState) -> View {
     Column(Modifier::new().fill_max_width()).child((
         Row(Modifier::new()
             .fill_max_width()
-            .height(16.0)
+            .height(16.0.dp())
             .align_items(AlignItems::CENTER))
-        .child(Text(label).size(11.0).color(th.on_surface_variant)),
+        .child(Text(label).size(11.0.sp()).color(th.on_surface_variant)),
         LinearProgressIndicator(
             Some(progress.clamp(0.0, 1.0)),
             LinearProgressIndicatorConfig {
@@ -62,16 +62,16 @@ pub fn piece_map_view(have: &[bool]) -> View {
         move |scope| {
             let n = have_data.len();
 
-            let edge_padding = 16.0;
-            let spacing = 1.0;
-            let min_piece_size = 3.0;
+            let edge_padding = 16.0.dp();
+            let spacing = 1.0.dp();
+            let min_piece_size = 3.0.dp();
 
             if n == 0 {
                 return Box(Modifier::new().fill_max_size());
             }
 
-            let available_w = scope.max_width.max(0.0);
-            let available_h = scope.max_height.max(0.0);
+            let available_w = scope.max_width.max(Dp::ZERO);
+            let available_h = scope.max_height.max(Dp::ZERO);
 
             if available_w < min_piece_size || available_h < min_piece_size {
                 return Box(Modifier::new().fill_max_size());
@@ -88,16 +88,16 @@ pub fn piece_map_view(have: &[bool]) -> View {
             for columns in 1..=max_cols_to_test {
                 let rows = n.div_ceil(columns);
 
-                let total_spacing_w = columns.saturating_sub(1) as f32 * spacing;
-                let total_spacing_h = rows.saturating_sub(1) as f32 * spacing;
+                let total_spacing_w = columns.saturating_sub(1) as f32 * spacing.value();
+                let total_spacing_h = rows.saturating_sub(1) as f32 * spacing.value();
 
-                let piece_w = (available_w - total_spacing_w) / columns as f32;
-                let piece_h = (available_h - total_spacing_h) / rows as f32;
+                let piece_w = (available_w.value() - total_spacing_w) / columns as f32;
+                let piece_h = (available_h.value() - total_spacing_h) / rows as f32;
 
                 let piece_size = piece_w.min(piece_h).floor();
 
-                if piece_size >= min_piece_size && piece_size > best_piece_size {
-                    best_piece_size = piece_size;
+                if piece_size >= min_piece_size.value() && piece_size > best_piece_size.value() {
+                    best_piece_size = piece_size.dp();
                     best_columns = columns;
                 }
             }
@@ -106,8 +106,10 @@ pub fn piece_map_view(have: &[bool]) -> View {
             let columns = best_columns;
             let rows = n.div_ceil(columns);
 
-            let grid_w = columns as f32 * piece_size + columns.saturating_sub(1) as f32 * spacing;
-            let grid_h = rows as f32 * piece_size + rows.saturating_sub(1) as f32 * spacing;
+            let grid_w =
+                columns as f32 * piece_size.value() + columns.saturating_sub(1) as f32 * spacing.value();
+            let grid_h =
+                rows as f32 * piece_size.value() + rows.saturating_sub(1) as f32 * spacing.value();
 
             let mut row_views: Vec<View> = Vec::with_capacity(rows * 2);
 
@@ -127,7 +129,7 @@ pub fn piece_map_view(have: &[bool]) -> View {
                         cells.push(Box(Modifier::new()
                             .size(piece_size, piece_size)
                             .background(color)
-                            .clip_rounded(1.0)));
+                            .clip_rounded(1.0.dp())));
 
                         if col + 1 < columns && idx + 1 < n {
                             cells.push(Box(Modifier::new().width(spacing)));
@@ -147,7 +149,7 @@ pub fn piece_map_view(have: &[bool]) -> View {
                 .padding(edge_padding)
                 .align_items(AlignItems::CENTER)
                 .justify_content(JustifyContent::CENTER))
-            .child(Column(Modifier::new().size(grid_w, grid_h)).child(row_views))
+            .child(Column(Modifier::new().size(grid_w.dp(), grid_h.dp())).child(row_views))
         },
     )
 }
