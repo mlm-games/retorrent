@@ -106,8 +106,8 @@ pub fn piece_map_view(have: &[bool]) -> View {
             let columns = best_columns;
             let rows = n.div_ceil(columns);
 
-            let grid_w =
-                columns as f32 * piece_size.value() + columns.saturating_sub(1) as f32 * spacing.value();
+            let grid_w = columns as f32 * piece_size.value()
+                + columns.saturating_sub(1) as f32 * spacing.value();
             let grid_h =
                 rows as f32 * piece_size.value() + rows.saturating_sub(1) as f32 * spacing.value();
 

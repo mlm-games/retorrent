@@ -977,7 +977,9 @@ fn torrent_list_view(
             .justify_content(JustifyContent::CENTER))
         .child(
             Column(Modifier::new().align_items(AlignItems::CENTER)).child((
-                Text("No torrents found").size(15.0.sp()).color(th.on_surface),
+                Text("No torrents found")
+                    .size(15.0.sp())
+                    .color(th.on_surface),
                 Box(Modifier::new().height(4.0.dp())),
                 Text("Add a .torrent file or magnet link to get started.")
                     .size(12.0.sp())
@@ -1136,7 +1138,9 @@ fn metric_compact(symbol: Symbol, value: String, color: Color) -> View {
 }
 
 fn metric_text(value: String) -> View {
-    Text(value).size(10.5.sp()).color(theme().on_surface_variant)
+    Text(value)
+        .size(10.5.sp())
+        .color(theme().on_surface_variant)
 }
 
 fn mode_label(mode: EncryptionMode) -> &'static str {
@@ -1164,7 +1168,9 @@ fn details_panel_view_v2(
                 .justify_content(JustifyContent::CENTER))
             .child(
                 Column(Modifier::new().align_items(AlignItems::CENTER)).child((
-                    Text("Select a torrent").size(18.0.sp()).color(th.on_surface),
+                    Text("Select a torrent")
+                        .size(18.0.sp())
+                        .color(th.on_surface),
                     Box(Modifier::new().height(6.0.dp())),
                     Text("Torrent details, files, peers, trackers, and pieces will appear here.")
                         .size(12.0.sp())
@@ -1426,15 +1432,19 @@ fn stat_card(
         .border(1.0.dp(), th.outline_variant, 16.0.dp())
         .clip_rounded(16.0.dp())
         .padding(14.0.dp()))
-    .child(Column(Modifier::new().fill_max_size()).child((
-        Row(Modifier::new().align_items(AlignItems::CENTER)).child((
-            icon(symbol, 18.0, color),
-            Box(Modifier::new().width(6.0.dp())),
-            Text(label.into()).size(11.0.sp()).color(th.on_surface_variant),
+    .child(
+        Column(Modifier::new().fill_max_size()).child((
+            Row(Modifier::new().align_items(AlignItems::CENTER)).child((
+                icon(symbol, 18.0, color),
+                Box(Modifier::new().width(6.0.dp())),
+                Text(label.into())
+                    .size(11.0.sp())
+                    .color(th.on_surface_variant),
+            )),
+            Spacer(),
+            Text(value.into()).size(17.0.sp()).color(th.on_surface),
         )),
-        Spacer(),
-        Text(value.into()).size(17.0.sp()).color(th.on_surface),
-    )))
+    )
 }
 
 fn info_section(title: &str, rows: Vec<(&str, String)>) -> View {
@@ -1743,7 +1753,9 @@ fn url_dialog_view(
         Modifier::new(),
         DialogProperties::default(),
         Column(Modifier::new().padding(24.0.dp()).min_width(400.0.dp())).child((
-            Text("Add Torrent from URL").size(18.0.sp()).color(th.on_surface),
+            Text("Add Torrent from URL")
+                .size(18.0.sp())
+                .color(th.on_surface),
             Box(Modifier::new().height(12.0.dp())),
             TextField(
                 Modifier::new().fill_max_width().height(60.0.dp()),
@@ -1994,7 +2006,9 @@ fn settings_dialog_view(
         Modifier::new().max_width(540.0.dp()),
         DialogProperties::default(),
         Column(Modifier::new().padding(th.spacing.xl)).child((
-            Text("\u{2699} Settings").size(18.0.sp()).color(th.on_surface),
+            Text("\u{2699} Settings")
+                .size(18.0.sp())
+                .color(th.on_surface),
             Box(Modifier::new().height(th.spacing.md)),
             ScrollArea(
                 Modifier::new().fill_max_width().max_height(400.0.dp()),
@@ -2070,31 +2084,32 @@ fn settings_dialog_view(
                                 .size(12.0.sp())
                                 .color(th.on_surface_variant)
                                 .modifier(Modifier::new().width(150.0.dp())),
-                            FlowRow(Modifier::new().flex_grow(1.0), FlowRowConfig::default()).child(
-                                [
-                                    EncryptionMode::Prefer,
-                                    EncryptionMode::Require,
-                                    EncryptionMode::Disable,
-                                ]
-                                .into_iter()
-                                .map(|mode| {
-                                    let selected = cfg.encryption_mode == mode;
-                                    let c = config.clone();
-                                    material3::FilterChip(
-                                        selected,
-                                        move || {
-                                            let mut nc = c.get();
-                                            nc.encryption_mode = mode;
-                                            c.set(nc);
-                                        },
-                                        Text(mode_label(mode)).size(11.0.sp()),
-                                        None,
-                                        None,
-                                        ChipConfig::default(),
-                                    )
-                                })
-                                .collect::<Vec<_>>(),
-                            ),
+                            FlowRow(Modifier::new().flex_grow(1.0), FlowRowConfig::default())
+                                .child(
+                                    [
+                                        EncryptionMode::Prefer,
+                                        EncryptionMode::Require,
+                                        EncryptionMode::Disable,
+                                    ]
+                                    .into_iter()
+                                    .map(|mode| {
+                                        let selected = cfg.encryption_mode == mode;
+                                        let c = config.clone();
+                                        material3::FilterChip(
+                                            selected,
+                                            move || {
+                                                let mut nc = c.get();
+                                                nc.encryption_mode = mode;
+                                                c.set(nc);
+                                            },
+                                            Text(mode_label(mode)).size(11.0.sp()),
+                                            None,
+                                            None,
+                                            ChipConfig::default(),
+                                        )
+                                    })
+                                    .collect::<Vec<_>>(),
+                                ),
                         )),
                     );
 
@@ -2112,7 +2127,9 @@ fn settings_dialog_view(
                     views.push(Box(Modifier::new().height(th.spacing.sm)));
                     views.push(
                         Row(Modifier::new().fill_max_width()).child((
-                            Text("Directory:").size(12.0.sp()).color(th.on_surface_variant),
+                            Text("Directory:")
+                                .size(12.0.sp())
+                                .color(th.on_surface_variant),
                             Text(cfg.download_dir.to_string_lossy())
                                 .size(12.0.sp())
                                 .color(th.on_surface),

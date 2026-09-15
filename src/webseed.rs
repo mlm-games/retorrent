@@ -180,12 +180,7 @@ impl WebseedSource {
             let file_path = chunk.file_path.clone();
             let file_offset = chunk.file_offset;
             let len = chunk.len;
-            async move {
-                fetch_chunk(
-                    &http, &bases, file_path, file_offset, len, idx,
-                )
-                .await
-            }
+            async move { fetch_chunk(&http, &bases, file_path, file_offset, len, idx).await }
         });
         let results: Vec<Result<Vec<u8>, String>> = futures::future::join_all(fetches).await;
         let mut data = Vec::with_capacity(piece_size as usize);
@@ -281,7 +276,10 @@ async fn fetch_chunk(
         );
         let resp = match http
             .get(&url)
-            .header("Range", format!("bytes={}-{}", file_offset, file_offset + len - 1))
+            .header(
+                "Range",
+                format!("bytes={}-{}", file_offset, file_offset + len - 1),
+            )
             .send()
             .await
         {
@@ -303,7 +301,12 @@ async fn fetch_chunk(
             }
         };
         if bytes.len() as u64 != len {
-            last_err = format!("short read: got {} expected {} from {}", bytes.len(), len, url);
+            last_err = format!(
+                "short read: got {} expected {} from {}",
+                bytes.len(),
+                len,
+                url
+            );
             continue;
         }
         return Ok(bytes.to_vec());

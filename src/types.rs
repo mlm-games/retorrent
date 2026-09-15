@@ -353,9 +353,8 @@ impl ResumeData {
             .map_err(|e| crate::error::TorrentError::ResumeData(format!("create dir: {}", e)))?;
         if let Some(ref bytes) = self.torrent_bytes {
             let tpath = dir.join(format!("{}.torrent", self.info_hash));
-            std::fs::write(&tpath, bytes).map_err(|e| {
-                crate::error::TorrentError::ResumeData(format!("torrent: {}", e))
-            })?;
+            std::fs::write(&tpath, bytes)
+                .map_err(|e| crate::error::TorrentError::ResumeData(format!("torrent: {}", e)))?;
         }
         let mut slim = self.clone();
         slim.torrent_bytes = None;
@@ -382,8 +381,9 @@ impl ResumeData {
         for suffix in [".resume.json", ".torrent"] {
             let path = dir.join(format!("{}{}", info_hash_hex, suffix));
             if path.exists() {
-                std::fs::remove_file(path)
-                    .map_err(|e| crate::error::TorrentError::ResumeData(format!("remove: {}", e)))?;
+                std::fs::remove_file(path).map_err(|e| {
+                    crate::error::TorrentError::ResumeData(format!("remove: {}", e))
+                })?;
             }
         }
         Ok(())

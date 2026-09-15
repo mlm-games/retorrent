@@ -453,5 +453,3 @@ pub fn drain_pending_intents() -> Vec<PendingTorrent> {
     let storage = PENDING_FROM_INTENT.get_or_init(|| Mutex::new(Vec::new()));
     std::mem::take(&mut *storage.lock().unwrap())
 }
-
-
